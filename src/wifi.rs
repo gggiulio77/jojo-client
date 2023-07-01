@@ -12,15 +12,36 @@ use futures::executor::block_on;
 use log::*;
 use parking_lot::{Condvar, Mutex};
 
-// TODO: make private fields with constructor
 pub struct ConnectTask<'a> {
-    pub modem: Modem,
-    pub sys_loop: EspEventLoop<System>,
-    pub nvs: Option<EspNvsPartition<NvsDefault>>,
-    pub timer: EspTimerService<Task>,
-    pub status: Arc<(Mutex<bool>, Condvar)>,
-    pub ssid: &'a str,
-    pub password: &'a str,
+    modem: Modem,
+    sys_loop: EspEventLoop<System>,
+    nvs: Option<EspNvsPartition<NvsDefault>>,
+    timer: EspTimerService<Task>,
+    status: Arc<(Mutex<bool>, Condvar)>,
+    ssid: &'a str,
+    password: &'a str,
+}
+
+impl<'a> ConnectTask<'a> {
+    pub fn new(
+        modem: Modem,
+        sys_loop: EspEventLoop<System>,
+        nvs: Option<EspNvsPartition<NvsDefault>>,
+        timer: EspTimerService<Task>,
+        status: Arc<(Mutex<bool>, Condvar)>,
+        ssid: &'a str,
+        password: &'a str,
+    ) -> Self {
+        ConnectTask {
+            modem,
+            sys_loop,
+            nvs,
+            timer,
+            status,
+            ssid,
+            password,
+        }
+    }
 }
 
 pub async fn connect(
