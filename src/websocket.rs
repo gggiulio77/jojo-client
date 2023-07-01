@@ -4,21 +4,50 @@ use embedded_websocket::{
     framer::{Framer, FramerError},
     WebSocketClient, WebSocketOptions, WebSocketSendMessageType,
 };
+use log::*;
 use parking_lot::{Condvar, Mutex};
+use serde::{Deserialize, Serialize};
+use url::Url;
+
+use crate::stick::StickRead;
 
 pub struct WebsocketTask<'a> {
-    pub address: &'a str,
-    pub wifi_status: Arc<(Mutex<bool>, Condvar)>,
-    pub bt_rx: crossbeam_channel::Receiver<bool>,
+    address: &'a str,
+    wifi_status: Arc<(Mutex<bool>, Condvar)>,
+    stick_rx: crossbeam_channel::Receiver<StickRead>,
 }
-use log::*;
-use url::Url;
+
+impl<'a> WebsocketTask<'a> {
+    pub fn new(
+        address: &'a str,
+        wifi_status: Arc<(Mutex<bool>, Condvar)>,
+        stick_rx: crossbeam_channel::Receiver<StickRead>,
+    ) -> Self {
+        WebsocketTask {
+            address,
+            wifi_status,
+            stick_rx,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub struct MouseRead {
+    x_read: i32,
+    y_read: i32,
+}
+
+impl MouseRead {
+    pub fn new(x_read: i32, y_read: i32) -> Self {
+        MouseRead { x_read, y_read }
+    }
+}
 
 pub fn init_task(task: WebsocketTask) {
     let WebsocketTask {
         address,
         wifi_status,
-        bt_rx,
+        stick_rx,
     } = task;
 
     let (lock, cvar) = &*wifi_status;
@@ -64,12 +93,12 @@ pub fn init_task(task: WebsocketTask) {
 
     framer.connect(&mut stream, &options).unwrap();
 
-    let mut cont = 0;
-
     loop {
-        if let Ok(_) = bt_rx.try_recv() {
-            cont += 1;
-            let message = format!("msg n = {cont}");
+        if let Ok(_read) = stick_rx.try_recv() {
+            // TODO: transform StickRead to MouseRead
+            let test_read = MouseRead::new(100, 100);
+            let message = serde_json::to_string(&test_read).unwrap();
+            info!("[websocket_task]:{:?}", message);
             framer
                 .write(
                     &mut stream,
@@ -79,6 +108,6 @@ pub fn init_task(task: WebsocketTask) {
                 )
                 .unwrap();
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
