@@ -4,7 +4,7 @@ pub mod stick;
 pub mod websocket;
 pub mod wifi;
 
-use crossbeam_channel::bounded;
+use crossbeam_channel::unbounded;
 use esp_idf_hal::prelude::Peripherals;
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, log::EspLogger, nvs::EspDefaultNvsPartition,
@@ -16,10 +16,7 @@ use parking_lot::{Condvar, Mutex};
 use rgb::RGB8;
 use std::sync::Arc;
 
-use crate::{
-    button::ButtonTask,
-    stick::{StickRead, StickTask},
-};
+use crate::{button::ButtonTask, stick::StickTask, websocket::MouseRead};
 
 const SSID: &'static str = env!("SSID");
 const PASSWORD: &'static str = env!("PASSWORD");
@@ -43,11 +40,12 @@ fn main() -> anyhow::Result<()> {
 
     neopixel.set(RGB8 { r: 0, g: 0, b: 0 })?;
     // Create channel
-    let (bt_tx, _bt_rx) = bounded::<bool>(10);
-    let (stick_tx, stick_rx) = bounded::<StickRead>(10);
+    let (bt_tx, _bt_rx) = unbounded::<bool>();
+    let (stick_tx, stick_rx) = unbounded::<MouseRead>();
 
     let wifi_status = Arc::new((Mutex::new(false), Condvar::new()));
     let wifi_status_wb = Arc::clone(&wifi_status);
+    let wifi_status_stick = Arc::clone(&wifi_status);
 
     let _wifi_thread = std::thread::Builder::new()
         .stack_size(6 * 1024)
@@ -67,16 +65,17 @@ fn main() -> anyhow::Result<()> {
         .stack_size(4 * 1024)
         .spawn(|| button::init_task(ButtonTask::new(peripherals.pins.gpio0, bt_tx)))?;
 
-    let _stick_thread = std::thread::Builder::new().stack_size(4 * 1024).spawn(|| {
+    let _stick_thread = std::thread::Builder::new().stack_size(6 * 1024).spawn(|| {
         stick::init_task(StickTask::new(
             peripherals.adc1,
             peripherals.pins.gpio5,
             peripherals.pins.gpio6,
             stick_tx,
+            wifi_status_stick,
         ))
     })?;
 
-    let _websocket_thread = std::thread::Builder::new().stack_size(8 * 1024).spawn(|| {
+    let _websocket_thread = std::thread::Builder::new().stack_size(3 * 4096).spawn(|| {
         websocket::init_task(websocket::WebsocketTask::new(
             WEBSOCKET_ADDRESS,
             wifi_status_wb,
