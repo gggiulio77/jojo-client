@@ -4,6 +4,7 @@ pub mod stick;
 pub mod websocket;
 pub mod wifi;
 
+use bus::Bus;
 use crossbeam_channel::unbounded;
 use esp_idf_hal::prelude::Peripherals;
 use esp_idf_svc::{
@@ -40,7 +41,9 @@ fn main() -> anyhow::Result<()> {
 
     neopixel.set(RGB8 { r: 0, g: 0, b: 0 })?;
     // Create channel
-    let (bt_tx, _bt_rx) = unbounded::<bool>();
+    let mut bt_bus = Bus::<bool>::new(10);
+    let bt_wb_rx = bt_bus.add_rx();
+    let bt_stick_rx = bt_bus.add_rx();
     let (stick_tx, stick_rx) = unbounded::<MouseRead>();
 
     let wifi_status = Arc::new((Mutex::new(false), Condvar::new()));
@@ -63,14 +66,16 @@ fn main() -> anyhow::Result<()> {
 
     let _button_thread = std::thread::Builder::new()
         .stack_size(4 * 1024)
-        .spawn(|| button::init_task(ButtonTask::new(peripherals.pins.gpio0, bt_tx)))?;
+        .spawn(|| button::init_task(ButtonTask::new(peripherals.pins.gpio0, bt_bus)))?;
 
     let _stick_thread = std::thread::Builder::new().stack_size(6 * 1024).spawn(|| {
         stick::init_task(StickTask::new(
             peripherals.adc1,
             peripherals.pins.gpio5,
             peripherals.pins.gpio6,
+            peripherals.pins.gpio7,
             stick_tx,
+            bt_wb_rx,
             wifi_status_stick,
         ))
     })?;
@@ -80,6 +85,7 @@ fn main() -> anyhow::Result<()> {
             WEBSOCKET_ADDRESS,
             wifi_status_wb,
             stick_rx,
+            bt_stick_rx,
         ))
     })?;
 
