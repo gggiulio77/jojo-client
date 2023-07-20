@@ -704,8 +704,7 @@ dependencies = [
 [[package]]
 name = "esp-idf-svc"
 version = "0.46.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "665233a26567d141f1bab603b9a868dc28bb8bea1188e7d927bab44329b84d63"
+source = "git+https://github.com/esp-rs/esp-idf-svc#5ccb5421711a4119fb55adb7072b267c944d7b25"
 dependencies = [
  "anyhow",
  "embassy-futures",
@@ -964,6 +963,7 @@ dependencies = [
  "atomic-polyfill 0.1.11",
  "hash32",
  "rustc_version",
+ "serde",
  "spin 0.9.8",
  "stable_deref_trait",
 ]
@@ -1202,6 +1202,7 @@ dependencies = [
  "esp-idf-svc",
  "esp-idf-sys",
  "futures",
+ "heapless",
  "log",
  "parking_lot",
  "rand",

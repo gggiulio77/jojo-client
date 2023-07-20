@@ -45,7 +45,11 @@ url = "2.4.0"
 tungstenite = "0.19.0"
 bincode = "1.3.3"
 bus = "2.4.0"
+heapless = { version = "0.7.16", features = ["serde"] }
 
 [build-dependencies]
 embuild = "0.31.2"
 dotenv = "0.15.0"
+
+[patch.crates-io]
+esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
