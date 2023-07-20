@@ -1,16 +1,17 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use embedded_svc::wifi::{
-    AccessPointConfiguration, AuthMethod, ClientConfiguration, Configuration,
+    AccessPointConfiguration, AccessPointInfo, AuthMethod, ClientConfiguration, Configuration,
 };
 use esp_idf_hal::{delay::FreeRtos, modem::Modem};
 use esp_idf_svc::{
     eventloop::{EspEventLoop, System},
     nvs::{EspNvsPartition, NvsDefault},
-    timer::{EspTimerService, Task},
-    wifi::{BlockingWifi, EspWifi},
+    wifi::{
+        config::{ScanConfig, ScanType},
+        BlockingWifi, EspWifi, NonBlocking,
+    },
 };
-use futures::executor::block_on;
 use log::*;
 use parking_lot::{Condvar, Mutex};
 
@@ -18,7 +19,6 @@ pub struct ConnectTask<'a> {
     modem: Modem,
     sys_loop: EspEventLoop<System>,
     nvs: Option<EspNvsPartition<NvsDefault>>,
-    timer: EspTimerService<Task>,
     status: Arc<(Mutex<bool>, Condvar)>,
     ssid: &'a str,
     password: &'a str,
@@ -31,7 +31,6 @@ impl<'a> ConnectTask<'a> {
         modem: Modem,
         sys_loop: EspEventLoop<System>,
         nvs: Option<EspNvsPartition<NvsDefault>>,
-        timer: EspTimerService<Task>,
         status: Arc<(Mutex<bool>, Condvar)>,
         ssid: &'a str,
         password: &'a str,
@@ -42,7 +41,6 @@ impl<'a> ConnectTask<'a> {
             modem,
             sys_loop,
             nvs,
-            timer,
             status,
             ssid,
             password,
@@ -85,18 +83,31 @@ pub enum ScanMessage {
 fn scan(
     wifi: &mut BlockingWifi<EspWifi<'static>>,
 ) -> anyhow::Result<(Vec<heapless::String<32>>, usize)> {
-    let (scan_result, n_aps) = wifi.scan_n::<5>()?;
+    let mut vec_ssid: Vec<heapless::String<32>> = Vec::new();
 
-    let vec_ssid: Vec<heapless::String<32>> =
-        scan_result
-            .into_iter()
-            .fold(Vec::new(), |mut acc, network| {
+    for channel in (1..=11).rev() {
+        wifi.wifi_mut().start_scan(
+            &ScanConfig {
+                channel: Some(channel),
+                ..Default::default()
+            },
+            false,
+        )?;
+
+        FreeRtos::delay_ms(150);
+
+        if let Ok(result) = wifi.wifi_mut().get_scan_result() {
+            result.into_iter().for_each(|network| {
                 if network.signal_strength > -50 {
-                    acc.push(network.ssid);
+                    vec_ssid.push(network.ssid);
                 }
-
-                return acc;
             });
+        }
+    }
+
+    wifi.wifi_mut().stop_scan()?;
+
+    let n_aps = vec_ssid.len();
 
     Ok((vec_ssid, n_aps))
 }
@@ -108,7 +119,6 @@ pub fn connect_task(task: ConnectTask) {
         modem,
         sys_loop,
         nvs,
-        timer: _,
         status,
         ssid,
         password,

@@ -114,7 +114,7 @@ fn scan(
                 buffer_scan_result.append(&mut scan_result.clone());
                 break;
             }
-            FreeRtos::delay_ms(200);
+            FreeRtos::delay_ms(100);
         };
     }
 
