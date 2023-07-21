@@ -682,8 +682,7 @@ dependencies = [
 [[package]]
 name = "esp-idf-hal"
 version = "0.41.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea0ed6e41edf280787a5325aae0c82d39b1fb5ae3199871cd164ae1a650704d6"
+source = "git+https://github.com/esp-rs/esp-idf-hal#a5dc68adcffb0bec220acfff41f271c31d44a051"
 dependencies = [
  "anyhow",
  "atomic-waker",
@@ -704,8 +703,7 @@ dependencies = [
 [[package]]
 name = "esp-idf-svc"
 version = "0.46.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "665233a26567d141f1bab603b9a868dc28bb8bea1188e7d927bab44329b84d63"
+source = "git+https://github.com/esp-rs/esp-idf-svc#5ccb5421711a4119fb55adb7072b267c944d7b25"
 dependencies = [
  "anyhow",
  "embassy-futures",
@@ -724,8 +722,7 @@ dependencies = [
 [[package]]
 name = "esp-idf-sys"
 version = "0.33.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d793b605e8037907f0e6697b0995a355238f065f321dd389fdf866aa9f8d140"
+source = "git+https://github.com/esp-rs/esp-idf-sys#7d587c462fd156f9c954efdd6ea7f095d332eeb7"
 dependencies = [
  "anyhow",
  "bindgen",
@@ -964,6 +961,7 @@ dependencies = [
  "atomic-polyfill 0.1.11",
  "hash32",
  "rustc_version",
+ "serde",
  "spin 0.9.8",
  "stable_deref_trait",
 ]
@@ -1202,6 +1200,7 @@ dependencies = [
  "esp-idf-svc",
  "esp-idf-sys",
  "futures",
+ "heapless",
  "log",
  "parking_lot",
  "rand",

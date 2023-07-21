@@ -9,7 +9,7 @@ use esp_idf_hal::{
 use log::*;
 use parking_lot::{Condvar, Mutex};
 
-use crate::websocket::MouseRead;
+use super::websocket;
 
 pub struct StickTask {
     adc1: ADC1,
@@ -19,7 +19,7 @@ pub struct StickTask {
     gpio_y: Gpio6,
     // TODO: add click gpio
     gpio_click: Gpio7,
-    stick_tx: crossbeam_channel::Sender<MouseRead>,
+    stick_tx: crossbeam_channel::Sender<websocket::MouseRead>,
     bt_rx: BusReader<bool>,
     wifi_status: Arc<(Mutex<bool>, Condvar)>,
 }
@@ -30,7 +30,7 @@ impl StickTask {
         gpio_x: Gpio5,
         gpio_y: Gpio6,
         gpio_click: Gpio7,
-        stick_tx: crossbeam_channel::Sender<MouseRead>,
+        stick_tx: crossbeam_channel::Sender<websocket::MouseRead>,
         bt_rx: BusReader<bool>,
         wifi_status: Arc<(Mutex<bool>, Condvar)>,
     ) -> Self {
@@ -100,10 +100,10 @@ impl StickRead {
     }
 }
 
-impl Into<MouseRead> for StickRead {
+impl Into<websocket::MouseRead> for StickRead {
     // type Error = anyhow::Error;
 
-    fn into(self) -> MouseRead {
+    fn into(self) -> websocket::MouseRead {
         let StickCalibration {
             x_b,
             y_b,
@@ -127,7 +127,7 @@ impl Into<MouseRead> for StickRead {
             (y_m * self.y_read as f32).round() as i32 + y_b
         };
 
-        MouseRead::new(x_read, y_read, self.click_read)
+        websocket::MouseRead::new(x_read, y_read, self.click_read)
     }
 }
 
@@ -251,7 +251,7 @@ pub fn init_task(task: StickTask) {
 
                 let click_read = click_btn.is_high();
 
-                let mouse_read: MouseRead =
+                let mouse_read: websocket::MouseRead =
                     StickRead::new(x_read, y_read, click_read, *calibration).into();
 
                 let (x_read, y_read, _) = mouse_read.reads();
