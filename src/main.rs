@@ -1,93 +1,83 @@
-pub mod button;
-pub mod led;
-pub mod stick;
-pub mod websocket;
-pub mod wifi;
-
-use bus::Bus;
-use crossbeam_channel::unbounded;
-use esp_idf_hal::prelude::Peripherals;
 use esp_idf_svc::{
-    eventloop::EspSystemEventLoop, log::EspLogger, nvs::EspDefaultNvsPartition,
-    timer::EspTaskTimerService,
+    log::EspLogger,
+    nvs::{EspDefaultNvsPartition, EspNvs, EspNvsPartition, NvsDefault},
 };
-use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
+use esp_idf_sys::{self as _};
 use log::*;
-use parking_lot::{Condvar, Mutex};
-use rgb::RGB8;
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 
-use crate::{button::ButtonTask, stick::StickTask, websocket::MouseRead};
+pub mod button;
+pub mod client;
+pub mod led;
+pub mod otp;
 
-const SSID: &'static str = env!("SSID");
-const PASSWORD: &'static str = env!("PASSWORD");
-const WEBSOCKET_ADDRESS: &'static str = env!("WEBSOCKET_ADDRESS");
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NetworkCredentials {
+    ssid: heapless::String<32>,
+    password: heapless::String<64>,
+}
+
+impl NetworkCredentials {
+    pub fn new(ssid: heapless::String<32>, password: heapless::String<64>) -> Self {
+        NetworkCredentials { ssid, password }
+    }
+}
+
+impl Default for NetworkCredentials {
+    fn default() -> Self {
+        let ssid = heapless::String::from("DefaultSSID");
+        let password = heapless::String::from("DefaultPassword");
+        NetworkCredentials::new(ssid, password)
+    }
+}
+
+enum AppState {
+    OTP(EspNvsPartition<NvsDefault>, EspNvs<NvsDefault>),
+    CLIENT(EspNvsPartition<NvsDefault>, NetworkCredentials),
+}
+
+const NAMESPACE: &'static str = env!("NAMESPACE");
+// TODO: this cannot cannot be more than 15 characters, find a way to type it at compile time
+pub const NETWORK_TAG: &'static str = "client_cred";
 
 fn main() -> anyhow::Result<()> {
     esp_idf_sys::link_patches();
 
     EspLogger::initialize_default();
 
-    let peripherals = Peripherals::take().unwrap();
-    let sys_loop = EspSystemEventLoop::take()?;
-    let timer_service = EspTaskTimerService::new()?;
-    let nvs = EspDefaultNvsPartition::take()?;
+    let nvs_default: EspNvsPartition<NvsDefault> = EspDefaultNvsPartition::take().unwrap();
 
-    info!("Starting application");
+    let nvs_namespace = match EspNvs::new(nvs_default.clone(), NAMESPACE, true) {
+        Ok(nvs) => {
+            info!("Got namespace {:?} from default partition", NAMESPACE);
+            nvs
+        }
+        Err(e) => panic!("Could't get namespace {:?}", e),
+    };
 
-    // TODO: find a way (if possible) to copy/clone the TxRmtDriver instance, create a task with a channel or use this as a singleton
-    // another way is to use a mutex with the neopixel instance and clone it to each task
-    let mut neopixel = led::Neopixel::new(peripherals.pins.gpio48, peripherals.rmt.channel0)?;
+    let buffer: &mut [u8] = &mut [0; 200];
 
-    neopixel.set(RGB8 { r: 0, g: 0, b: 0 })?;
-    // Create channel
-    let mut bt_bus = Bus::<bool>::new(10);
-    let bt_wb_rx = bt_bus.add_rx();
-    let bt_stick_rx = bt_bus.add_rx();
-    let (stick_tx, stick_rx) = unbounded::<MouseRead>();
+    let state: AppState = match nvs_namespace.get_raw(NETWORK_TAG, buffer)? {
+        Some(network_credentials) => {
+            let decode: NetworkCredentials = bincode::deserialize(network_credentials)?;
+            info!("[main_task]: Network credentials found: {:?}", decode);
+            AppState::CLIENT(nvs_default, decode)
+        }
+        None => {
+            info!("[main_task]: Network credentials not found");
+            AppState::OTP(nvs_default, nvs_namespace)
+        }
+    };
 
-    let wifi_status = Arc::new((Mutex::new(false), Condvar::new()));
-    let wifi_status_wb = Arc::clone(&wifi_status);
-    let wifi_status_stick = Arc::clone(&wifi_status);
-
-    let _wifi_thread = std::thread::Builder::new()
-        .stack_size(6 * 1024)
-        .spawn(move || {
-            wifi::connect_task(wifi::ConnectTask::new(
-                peripherals.modem,
-                sys_loop,
-                Some(nvs),
-                timer_service,
-                wifi_status,
-                SSID,
-                PASSWORD,
-            ))
-        })?;
-
-    let _button_thread = std::thread::Builder::new()
-        .stack_size(4 * 1024)
-        .spawn(|| button::init_task(ButtonTask::new(peripherals.pins.gpio0, bt_bus)))?;
-
-    let _stick_thread = std::thread::Builder::new().stack_size(6 * 1024).spawn(|| {
-        stick::init_task(StickTask::new(
-            peripherals.adc1,
-            peripherals.pins.gpio5,
-            peripherals.pins.gpio6,
-            peripherals.pins.gpio7,
-            stick_tx,
-            bt_wb_rx,
-            wifi_status_stick,
-        ))
-    })?;
-
-    let _websocket_thread = std::thread::Builder::new().stack_size(3 * 4096).spawn(|| {
-        websocket::init_task(websocket::WebsocketTask::new(
-            WEBSOCKET_ADDRESS,
-            wifi_status_wb,
-            stick_rx,
-            bt_stick_rx,
-        ))
-    })?;
+    // TODO: think a way to reset client credentials (go from CLIENT -> OTP)
+    match state {
+        AppState::OTP(nvs_default, nvs_namespace) => {
+            otp::main(nvs_default, nvs_namespace)?;
+        }
+        AppState::CLIENT(nvs_default, network_credentials) => {
+            client::main(nvs_default, network_credentials)?;
+        }
+    }
 
     Ok(())
 }
