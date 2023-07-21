@@ -682,8 +682,7 @@ dependencies = [
 [[package]]
 name = "esp-idf-hal"
 version = "0.41.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea0ed6e41edf280787a5325aae0c82d39b1fb5ae3199871cd164ae1a650704d6"
+source = "git+https://github.com/esp-rs/esp-idf-hal#a5dc68adcffb0bec220acfff41f271c31d44a051"
 dependencies = [
  "anyhow",
  "atomic-waker",
@@ -723,8 +722,7 @@ dependencies = [
 [[package]]
 name = "esp-idf-sys"
 version = "0.33.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d793b605e8037907f0e6697b0995a355238f065f321dd389fdf866aa9f8d140"
+source = "git+https://github.com/esp-rs/esp-idf-sys#7d587c462fd156f9c954efdd6ea7f095d332eeb7"
 dependencies = [
  "anyhow",
  "bindgen",

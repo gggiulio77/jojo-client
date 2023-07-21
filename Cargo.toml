@@ -29,7 +29,7 @@ embassy = ["esp-idf-hal?/embassy-sync", "esp-idf-hal?/critical-section", "esp-id
 
 [dependencies]
 log = { version = "0.4.17", default-features = false }
-esp-idf-sys = { version = "0.33", default-features = false }
+esp-idf-sys = { version = "0.33", default-features = false, features = ["binstart"] }
 esp-idf-hal = { version = "0.41", optional = true, default-features = false }
 esp-idf-svc = { version = "0.46", optional = true, default-features = false }
 embedded-svc = { version = "0.25", optional = true, default-features = false }
@@ -53,3 +53,5 @@ dotenv = "0.15.0"
 
 [patch.crates-io]
 esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
+esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys" }
+esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
