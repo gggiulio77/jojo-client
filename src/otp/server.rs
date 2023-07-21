@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use crate::{led::Neopixel, wifi_otp::ScanMessage};
+use crate::NetworkCredentials;
 use embedded_svc::{
     http::server::{Connection, Handler, HandlerError, HandlerResult, Method, Middleware, Request},
     io::Write,
+    utils,
 };
 use esp_idf_hal::delay::FreeRtos;
 use esp_idf_svc::http::server::{
@@ -15,25 +16,27 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::str;
 
-pub struct ServerTask<'a> {
+use super::wifi_otp;
+
+pub struct ServerTask {
     wifi_status: Arc<(Mutex<bool>, Condvar)>,
-    led: Neopixel<'a>,
-    tx_channel: crossbeam_channel::Sender<ScanMessage>,
-    rx_channel: crossbeam_channel::Receiver<ScanMessage>,
+    wifi_tx: crossbeam_channel::Sender<wifi_otp::ScanMessage>,
+    server_rx: crossbeam_channel::Receiver<wifi_otp::ScanMessage>,
+    nvs_tx: crossbeam_channel::Sender<NetworkCredentials>,
 }
 
-impl<'a> ServerTask<'a> {
+impl ServerTask {
     pub fn new(
         wifi_status: Arc<(Mutex<bool>, Condvar)>,
-        led: Neopixel<'a>,
-        tx_channel: crossbeam_channel::Sender<ScanMessage>,
-        rx_channel: crossbeam_channel::Receiver<ScanMessage>,
+        wifi_tx: crossbeam_channel::Sender<wifi_otp::ScanMessage>,
+        server_rx: crossbeam_channel::Receiver<wifi_otp::ScanMessage>,
+        nvs_tx: crossbeam_channel::Sender<NetworkCredentials>,
     ) -> Self {
         ServerTask {
             wifi_status,
-            led,
-            tx_channel,
-            rx_channel,
+            wifi_tx,
+            server_rx,
+            nvs_tx,
         }
     }
 }
@@ -92,8 +95,8 @@ fn health(request: Request<&mut EspHttpConnection>) -> Result<(), HandlerError> 
 
 fn scan(
     request: Request<&mut EspHttpConnection>,
-    tx_channel: &crossbeam_channel::Sender<ScanMessage>,
-    rx_channel: &crossbeam_channel::Receiver<ScanMessage>,
+    wifi_tx: &crossbeam_channel::Sender<wifi_otp::ScanMessage>,
+    server_rx: &crossbeam_channel::Receiver<wifi_otp::ScanMessage>,
 ) -> Result<(), HandlerError> {
     let mut response = request.into_response(
         200,
@@ -104,13 +107,13 @@ fn scan(
         ],
     )?;
 
-    tx_channel.try_send(ScanMessage::Request).unwrap();
+    wifi_tx.try_send(wifi_otp::ScanMessage::Request).unwrap();
 
     let mut buffer_scan_result: Vec<heapless::String<32>> = Vec::new();
 
     loop {
-        if let Ok(message) = rx_channel.try_recv() {
-            if let ScanMessage::Response(scan_result) = message {
+        if let Ok(message) = server_rx.try_recv() {
+            if let wifi_otp::ScanMessage::Response(scan_result) = message {
                 buffer_scan_result.append(&mut scan_result.clone());
                 break;
             }
@@ -129,17 +132,37 @@ fn scan(
     Ok(())
 }
 
+fn save_credentials(
+    mut request: Request<&mut EspHttpConnection>,
+    nvs_tx: &crossbeam_channel::Sender<NetworkCredentials>,
+) -> Result<(), HandlerError> {
+    let (_, mut body) = request.split();
+
+    let mut buf = [0u8; 512];
+    let bytes_read = utils::io::try_read_full(&mut body, &mut buf).map_err(|e| e.0)?;
+
+    let network_credentials: NetworkCredentials = serde_json::from_slice(&buf[0..bytes_read])?;
+
+    nvs_tx.send(network_credentials)?;
+
+    // TODO: think a way to validate the nvs task has write flash, maybe a condvar or another channel
+
+    request.into_ok_response()?;
+
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct ScanResponse {
     found_ssid: Vec<heapless::String<32>>,
 }
 
-pub fn init_task(task: ServerTask<'static>) {
+pub fn init_task(task: ServerTask) {
     let ServerTask {
         wifi_status,
-        led: _,
-        tx_channel,
-        rx_channel,
+        wifi_tx,
+        server_rx,
+        nvs_tx,
     } = task;
 
     let (lock, cvar) = &*wifi_status;
@@ -167,10 +190,22 @@ pub fn init_task(task: ServerTask<'static>) {
             "/scan",
             Method::Get,
             ErrorMiddleware {}.compose(fn_handler(move |request| {
-                scan(request, &tx_channel, &rx_channel)
+                scan(request, &wifi_tx, &server_rx)
             })),
         )
         .unwrap();
+
+    server
+        .handler(
+            "/save_credentials",
+            Method::Post,
+            ErrorMiddleware {}.compose(fn_handler(move |request| {
+                save_credentials(request, &nvs_tx)
+            })),
+        )
+        .unwrap();
+
+    // TODO: think about adding a restart endpoint
 
     loop {
         FreeRtos::delay_ms(1000);
