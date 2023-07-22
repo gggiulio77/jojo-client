@@ -24,8 +24,8 @@ impl BroadcastTask {
     }
 }
 
-const BIND_ADDRESS: &'static str = "0.0.0.0:0";
-const BROADCAST_ADDRESS: &'static str = "192.168.0.255:11430";
+const BROADCAST_BIND_ADDRESS: &'static str = env!("BROADCAST_BIND_ADDRESS");
+const BROADCAST_ADDRESS: &'static str = env!("BROADCAST_ADDRESS");
 
 pub fn init_task(task: BroadcastTask) -> anyhow::Result<()> {
     let BroadcastTask {
@@ -45,7 +45,7 @@ pub fn init_task(task: BroadcastTask) -> anyhow::Result<()> {
     drop(started);
 
     // TODO: make a multicast alternative
-    let socket = UdpSocket::bind(BIND_ADDRESS).unwrap();
+    let socket = UdpSocket::bind(BROADCAST_BIND_ADDRESS).unwrap();
     socket.set_broadcast(true).unwrap();
 
     info!("[discovery_task]: Listening to {:?}", socket.local_addr());
