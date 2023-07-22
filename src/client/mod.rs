@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use bus::Bus;
 use crossbeam_channel::unbounded;
@@ -12,11 +12,12 @@ use log::*;
 use parking_lot::{Condvar, Mutex};
 use rgb::RGB8;
 
+pub mod broadcast;
 pub mod stick;
 pub mod websocket;
 pub mod wifi_client;
 
-use crate::{button, led, NetworkCredentials};
+use crate::{button, client::broadcast::BroadcastTask, led, NetworkCredentials};
 
 const WEBSOCKET_ADDRESS: &'static str = env!("WEBSOCKET_ADDRESS");
 
@@ -43,8 +44,12 @@ pub fn main(
     let (stick_tx, stick_rx) = unbounded::<websocket::MouseRead>();
 
     let wifi_status = Arc::new((Mutex::new(false), Condvar::new()));
-    let wifi_status_wb = Arc::clone(&wifi_status);
+    let wifi_status_bd = Arc::clone(&wifi_status);
+    // TODO: review this condvar, maybe replace it with a websocket broadcast channel
     let wifi_status_stick = Arc::clone(&wifi_status);
+
+    // TODO: review this channel, maybe replace it with two broadcast channels, for websocket and discovery
+    let (discovery_tx, discovery_rx) = unbounded::<SocketAddr>();
 
     info!("[client_task]: creating tasks");
 
@@ -62,6 +67,10 @@ pub fn main(
             ))
         })?;
 
+    let _broadcast_discovery = std::thread::Builder::new()
+        .stack_size(4 * 1024)
+        .spawn(|| broadcast::init_task(BroadcastTask::new(wifi_status_bd, discovery_tx)))?;
+
     let _button_thread = std::thread::Builder::new()
         .stack_size(4 * 1024)
         .spawn(|| button::init_task(button::ButtonTask::new(peripherals.pins.gpio0, bt_bus)))?;
@@ -78,14 +87,16 @@ pub fn main(
         ))
     })?;
 
-    let _websocket_thread = std::thread::Builder::new().stack_size(3 * 4096).spawn(|| {
-        websocket::init_task(websocket::WebsocketTask::new(
-            WEBSOCKET_ADDRESS,
-            wifi_status_wb,
-            stick_rx,
-            bt_stick_rx,
-        ))
-    })?;
+    let _websocket_thread = std::thread::Builder::new()
+        .stack_size(12 * 1024)
+        .spawn(|| {
+            websocket::init_task(websocket::WebsocketTask::new(
+                WEBSOCKET_ADDRESS,
+                discovery_rx,
+                stick_rx,
+                bt_stick_rx,
+            ))
+        })?;
 
     Ok(())
 }
