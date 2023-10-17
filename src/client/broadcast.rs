@@ -50,8 +50,8 @@ pub fn init_task(task: BroadcastTask) -> anyhow::Result<()> {
 
     info!("[discovery_task]: Listening to {:?}", socket.local_addr());
 
-    let socket_arc = Arc::new(socket);
-    let socket_sender = socket_arc.clone();
+    let socket_rx = Arc::new(parking_lot::RwLock::new(socket));
+    let socket_tx = socket_rx.clone();
 
     let (sender_tx, sender_rx) = crossbeam_channel::unbounded::<bool>();
 
@@ -63,7 +63,8 @@ pub fn init_task(task: BroadcastTask) -> anyhow::Result<()> {
                 return;
             }
             info!("[sender_task]: sending udp packet");
-            socket_sender
+            socket_tx
+                .read()
                 .send_to("hello".as_bytes(), BROADCAST_ADDRESS)
                 .unwrap();
 
@@ -74,15 +75,22 @@ pub fn init_task(task: BroadcastTask) -> anyhow::Result<()> {
     let mut buffer: [u8; 512] = [0; 512];
     info!("[discovery_task]: waiting for message");
 
-    let (n_bytes, ip_address) = socket_arc.recv_from(&mut buffer).unwrap();
-    let message = std::str::from_utf8(&buffer[0..n_bytes]);
-    info!("Receive: {:?}, from: {:?}", message, ip_address);
+    let (n_bytes, server_ip) = socket_rx.read().recv_from(&mut buffer).unwrap();
+    let server_port = std::str::from_utf8(&buffer[0..n_bytes])
+        .unwrap()
+        .parse()
+        .unwrap();
+    info!(
+        "[discovery_task]: Receive: {:?}, from: {:?}",
+        server_port, server_ip
+    );
 
     info!("[discovery_task]: dropping sender_task");
     sender_tx.send(true).unwrap();
-    drop(socket_arc);
 
-    discovery_tx.send(ip_address).unwrap();
+    discovery_tx
+        .send(SocketAddr::new(server_ip.ip(), server_port))
+        .unwrap();
 
     info!("[discovery_task]: dropping");
 
