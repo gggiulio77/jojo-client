@@ -32,20 +32,18 @@ impl<'a> WebsocketTask<'a> {
 #[derive(Debug)]
 struct WebsocketState {
     pub current_state: WebsocketStates,
-    pub socket: Option<WebSocket<TcpStream>>,
 }
 
 impl Default for WebsocketState {
     fn default() -> Self {
-        WebsocketState::new(WebsocketStates::Discovery, None)
+        WebsocketState::new(WebsocketStates::Discovery)
     }
 }
 
 impl WebsocketState {
-    pub fn new(init_state: WebsocketStates, socket: Option<WebSocket<TcpStream>>) -> Self {
+    pub fn new(init_state: WebsocketStates) -> Self {
         WebsocketState {
             current_state: init_state,
-            socket,
         }
     }
 
@@ -63,14 +61,9 @@ impl WebsocketState {
         self.to_state(WebsocketStates::Init(ip_address));
     }
 
-    pub fn to_hello(&mut self) {
-        info!("[websocket_task]:state_hello");
-        self.to_state(WebsocketStates::Hello);
-    }
-
-    pub fn to_connected(&mut self) {
+    pub fn to_connected(&mut self, socket: WebSocket<TcpStream>) {
         info!("[websocket_task]:state_connecting");
-        self.to_state(WebsocketStates::Connected);
+        self.to_state(WebsocketStates::Connected(socket));
     }
 }
 
@@ -78,8 +71,7 @@ impl WebsocketState {
 enum WebsocketStates {
     Discovery,
     Init(SocketAddr),
-    Hello,
-    Connected,
+    Connected(WebSocket<TcpStream>),
 }
 
 pub fn init_task(task: WebsocketTask) {
@@ -90,7 +82,6 @@ pub fn init_task(task: WebsocketTask) {
     } = task;
 
     let mut main_state = WebsocketState::default();
-
     loop {
         // TODO: remove current_state access, replace with something else
         match main_state.current_state {
@@ -129,14 +120,12 @@ pub fn init_task(task: WebsocketTask) {
                 )
                 .unwrap();
 
-                // Save socket in state
-                main_state.socket = Some(socket);
-
-                main_state.to_hello();
+                main_state.to_connected(socket);
             }
-            WebsocketStates::Hello => {
-                // TODO: send device message to server
-                // TODO: replace device with flash device
+            WebsocketStates::Connected(socket) => {
+                let socket_tx = Arc::new(parking_lot::Mutex::new(socket));
+                let socket_rx = socket_tx.clone();
+
                 info!("[websocket_task]:Sending Device");
                 let device = jojo_common::device::Device::new(
                     uuid!("340917e8-87a9-455c-9645-d08eb99162f9"),
@@ -146,43 +135,54 @@ pub fn init_task(task: WebsocketTask) {
                 );
                 let message = jojo_common::message::ClientMessage::Device(device);
 
-                main_state
-                    .socket
-                    .as_mut()
-                    .unwrap()
+                socket_tx
+                    .lock()
                     .write(Message::Binary(bincode::serialize(&message).unwrap()))
                     .unwrap();
 
-                main_state.to_connected()
-            }
-            WebsocketStates::Connected => {
-                let socket = main_state.socket.as_mut().unwrap();
-                // let test = Arc::new(parking_lot::RwLock::new(socket));
-                // let test_clone = test.clone();
+                drop(message);
 
-                // let _ = std::thread::Builder::new()
-                //     .stack_size(2 * 1024)
-                //     .spawn(move || loop {
-                //         if let Ok(message) = test_clone.read().read() {
-                //             info!("[websocket_task]:Rx: {:?}", message);
-                //             message_handler(message)
-                //         }
-                //     })
-                //     .unwrap();
+                info!("[websocket_task]: init read task");
 
-                // TODO: use socket.read and send it to message handler
-                // Low bandwidth mode can be achieved by not sending empty messages but affects the "flow" feel
-                if let Ok(message) = socket.read() {
-                    info!("[websocket_task]:Rx: {:?}", message);
-                    message_handler(message)
-                }
-                // TODO: listen to sender_rx and send it witch socket.write
-                // TODO: reads must be Reads type from common library
-                if let Ok(reads) = websocket_sender_rx.try_recv() {
-                    // info!("[websocket_task]:Tx : {:?}", reads);
-                    socket
-                        .write(Message::Binary(bincode::serialize(&reads).unwrap()))
-                        .unwrap();
+                let _ = std::thread::Builder::new()
+                    .stack_size(6 * 1024)
+                    .spawn(move || loop {
+                        // info!("[websocket_task]: reading from websocket");
+                        if let Ok(message) = socket_rx.lock().read() {
+                            // info!("[websocket_task]:Rx: {:?}", message);
+                            message_handler(message)
+                        }
+                        FreeRtos::delay_ms(750);
+                    })
+                    .unwrap();
+
+                info!("[websocket_task]: init write task");
+
+                let _ = std::thread::Builder::new()
+                    .stack_size(6 * 1024)
+                    .spawn(move || loop {
+                        // info!("[websocket_task]: writing to websocket");
+                        if let Ok(reads) = websocket_sender_rx.try_recv() {
+                            // info!("[websocket_task]:Tx : {:?}", reads);
+                            socket_tx
+                                .lock()
+                                .write(Message::Binary(bincode::serialize(&reads).unwrap()))
+                                .unwrap();
+                        } else {
+                            // TODO: this is to maintain a "flow" feeling, review why this happen
+                            let empty_message = jojo_common::message::ClientMessage::Reads(vec![
+                                jojo_common::message::Reads::new(None, None),
+                            ]);
+                            socket_tx
+                                .lock()
+                                .write(Message::Binary(bincode::serialize(&empty_message).unwrap()))
+                                .unwrap();
+                        }
+                    })
+                    .unwrap();
+
+                loop {
+                    FreeRtos::delay_ms(1000);
                 }
             }
         }
