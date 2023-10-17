@@ -1,81 +1,59 @@
-use std::net::{SocketAddr, TcpStream};
-
-use bus::BusReader;
 use esp_idf_hal::delay::FreeRtos;
 use log::*;
+use std::{
+    net::{SocketAddr, TcpStream},
+    sync::Arc,
+};
+use uuid::uuid;
 
-use serde::{Deserialize, Serialize};
-use tungstenite::{client, Message, WebSocket};
-use url::Url;
+use tungstenite::{client::client_with_config, protocol::WebSocketConfig, Message, WebSocket};
 
 pub struct WebsocketTask<'a> {
-    address: &'a str,
+    path: &'a str,
     discovery_rx: crossbeam_channel::Receiver<SocketAddr>,
-    stick_rx: crossbeam_channel::Receiver<MouseRead>,
-    bt_rx: BusReader<bool>,
+    websocket_sender_rx: crossbeam_channel::Receiver<jojo_common::message::ClientMessage>,
 }
 
 impl<'a> WebsocketTask<'a> {
     pub fn new(
-        address: &'a str,
+        path: &'a str,
         discovery_rx: crossbeam_channel::Receiver<SocketAddr>,
-        stick_rx: crossbeam_channel::Receiver<MouseRead>,
-        bt_rx: BusReader<bool>,
+        websocket_sender_rx: crossbeam_channel::Receiver<jojo_common::message::ClientMessage>,
     ) -> Self {
         WebsocketTask {
-            address,
+            path,
             discovery_rx,
-            stick_rx,
-            bt_rx,
+            websocket_sender_rx,
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
-pub struct MouseRead {
-    x_read: i32,
-    y_read: i32,
-    // TODO: generalize to all mouse buttons
-    click_read: bool,
-}
-
-impl MouseRead {
-    pub fn new(x_read: i32, y_read: i32, click_read: bool) -> Self {
-        MouseRead {
-            x_read,
-            y_read,
-            click_read,
-        }
-    }
-
-    pub fn reads(self) -> (i32, i32, bool) {
-        (self.x_read, self.y_read, self.click_read)
     }
 }
 
 // TODO: try a crate for states machines
-struct WebsocketState<T> {
-    pub current_state: WebsocketStates<T>,
+#[derive(Debug)]
+struct WebsocketState {
+    pub current_state: WebsocketStates,
+    pub socket: Option<WebSocket<TcpStream>>,
 }
 
-impl<T> Default for WebsocketState<T> {
+impl Default for WebsocketState {
     fn default() -> Self {
-        WebsocketState::new(WebsocketStates::Discovery)
+        WebsocketState::new(WebsocketStates::Discovery, None)
     }
 }
 
-impl<'a, T> WebsocketState<T> {
-    pub fn new(init_state: WebsocketStates<T>) -> Self {
+impl WebsocketState {
+    pub fn new(init_state: WebsocketStates, socket: Option<WebSocket<TcpStream>>) -> Self {
         WebsocketState {
             current_state: init_state,
+            socket,
         }
     }
 
-    fn to_state(&mut self, state: WebsocketStates<T>) {
+    fn to_state(&mut self, state: WebsocketStates) {
         self.current_state = state;
     }
 
-    pub fn to_discovery(&mut self) {
+    pub fn _to_discovery(&mut self) {
         info!("[websocket_task]:state_discovery");
         self.to_state(WebsocketStates::Discovery);
     }
@@ -85,40 +63,33 @@ impl<'a, T> WebsocketState<T> {
         self.to_state(WebsocketStates::Init(ip_address));
     }
 
-    pub fn to_connected(&mut self, socket: WebSocket<T>, ip_address: SocketAddr) {
-        info!("[websocket_task]:state_connecting");
-        self.to_state(WebsocketStates::Connected(socket, ip_address));
+    pub fn to_hello(&mut self) {
+        info!("[websocket_task]:state_hello");
+        self.to_state(WebsocketStates::Hello);
     }
 
-    pub fn to_paused(&mut self, ip_address: SocketAddr) {
-        info!("[websocket_task]:state_paused");
-        self.to_state(WebsocketStates::Paused(ip_address));
+    pub fn to_connected(&mut self) {
+        info!("[websocket_task]:state_connecting");
+        self.to_state(WebsocketStates::Connected);
     }
 }
 
-enum WebsocketStates<T> {
+#[derive(Debug)]
+enum WebsocketStates {
     Discovery,
     Init(SocketAddr),
-    // TODO: remove SocketAddr
-    Connected(WebSocket<T>, SocketAddr),
-    // TODO: remove SocketAddr
-    Paused(SocketAddr),
+    Hello,
+    Connected,
 }
 
 pub fn init_task(task: WebsocketTask) {
     let WebsocketTask {
-        address,
+        path,
         discovery_rx,
-        stick_rx,
-        mut bt_rx,
+        websocket_sender_rx,
     } = task;
 
-    // Parsing url
-    let parsed_url = Url::parse(address).unwrap();
-    let _host = parsed_url.host_str().unwrap();
-    let port = parsed_url.port().unwrap();
-
-    let mut main_state: WebsocketState<TcpStream> = WebsocketState::default();
+    let mut main_state = WebsocketState::default();
 
     loop {
         // TODO: remove current_state access, replace with something else
@@ -130,44 +101,94 @@ pub fn init_task(task: WebsocketTask) {
                 }
                 FreeRtos::delay_ms(100);
             }
-            WebsocketStates::Init(ip_address) => {
+            WebsocketStates::Init(server_address) => {
                 info!(
-                    "[websocket_task]:Connecting to: {:?}:{:?}",
-                    ip_address.ip(),
-                    port
+                    "[websocket_task]:Connecting to: {}/{}",
+                    server_address, path
                 );
-                let stream = TcpStream::connect(format!("{}:{}", ip_address.ip(), port)).unwrap();
 
-                let (socket, _response) = client(&parsed_url, stream).unwrap();
+                let stream = TcpStream::connect(server_address).unwrap();
 
-                info!("[websocket_task]:Connected.");
+                // let (socket, _response) =
+                //     client(&format!("ws://{}/{}", server_address, path), stream).unwrap();
+                // TODO: replace uuid with device
+                let (socket, _broadcast_discovery) = client_with_config(
+                    &format!(
+                        "ws://{}/{}/340917e8-87a9-455c-9645-d08eb99162f9",
+                        server_address, path
+                    ),
+                    stream,
+                    Some(WebSocketConfig {
+                        write_buffer_size: 64,
+                        max_message_size: Some(256),
+                        max_write_buffer_size: 256,
+                        max_frame_size: Some(256),
+                        accept_unmasked_frames: true,
+                        ..WebSocketConfig::default()
+                    }),
+                )
+                .unwrap();
 
-                main_state.to_connected(socket, ip_address);
+                // Save socket in state
+                main_state.socket = Some(socket);
+
+                main_state.to_hello();
             }
-            WebsocketStates::Connected(ref mut socket, ip_address) => 'label: {
-                if let Ok(_) = bt_rx.try_recv() {
-                    socket.write_message(Message::Close(None)).unwrap();
-                    drop(socket);
-                    main_state.to_paused(ip_address);
-                    break 'label;
-                }
+            WebsocketStates::Hello => {
+                // TODO: send device message to server
+                // TODO: replace device with flash device
+                info!("[websocket_task]:Sending Device");
+                let device = jojo_common::device::Device::new(
+                    uuid!("340917e8-87a9-455c-9645-d08eb99162f9"),
+                    "test".to_string(),
+                    None,
+                    vec![],
+                );
+                let message = jojo_common::message::ClientMessage::Device(device);
 
-                // Low bandwidth mode can be achieved by not sending empty messages but affects the "flow" feel
-                let mouse_reads: Vec<MouseRead> = stick_rx.try_iter().collect();
-
-                socket
-                    .write_message(Message::Binary(bincode::serialize(&mouse_reads).unwrap()))
+                main_state
+                    .socket
+                    .as_mut()
+                    .unwrap()
+                    .write(Message::Binary(bincode::serialize(&message).unwrap()))
                     .unwrap();
+
+                main_state.to_connected()
             }
-            WebsocketStates::Paused(ip_address) => 'label: {
-                // TODO: to this to work we need to pause the ADC, for this we need to signal with stick_tx the STOP and also RESUME
-                if let Ok(_) = bt_rx.try_recv() {
-                    // TODO: when we have a method to restart the discovery task replace this with to_discovery
-                    main_state.to_init(ip_address);
-                    break 'label;
+            WebsocketStates::Connected => {
+                let socket = main_state.socket.as_mut().unwrap();
+                // let test = Arc::new(parking_lot::RwLock::new(socket));
+                // let test_clone = test.clone();
+
+                // let _ = std::thread::Builder::new()
+                //     .stack_size(2 * 1024)
+                //     .spawn(move || loop {
+                //         if let Ok(message) = test_clone.read().read() {
+                //             info!("[websocket_task]:Rx: {:?}", message);
+                //             message_handler(message)
+                //         }
+                //     })
+                //     .unwrap();
+
+                // TODO: use socket.read and send it to message handler
+                // Low bandwidth mode can be achieved by not sending empty messages but affects the "flow" feel
+                if let Ok(message) = socket.read() {
+                    info!("[websocket_task]:Rx: {:?}", message);
+                    message_handler(message)
                 }
-                FreeRtos::delay_ms(500);
+                // TODO: listen to sender_rx and send it witch socket.write
+                // TODO: reads must be Reads type from common library
+                if let Ok(reads) = websocket_sender_rx.try_recv() {
+                    // info!("[websocket_task]:Tx : {:?}", reads);
+                    socket
+                        .write(Message::Binary(bincode::serialize(&reads).unwrap()))
+                        .unwrap();
+                }
             }
         }
     }
+}
+
+pub fn message_handler(_message: Message) {
+    ()
 }
