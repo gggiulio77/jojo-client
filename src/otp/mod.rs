@@ -10,8 +10,8 @@ use log::*;
 use parking_lot::{Condvar, Mutex};
 use rgb::RGB8;
 
-pub mod nvs;
 pub mod server;
+pub mod nvs;
 pub mod wifi_otp;
 
 use crate::{led, NetworkCredentials};

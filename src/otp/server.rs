@@ -154,6 +154,7 @@ fn save_credentials(
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ScanResponse {
+    // TODO: replace this with Vec<NetworkSSID>
     found_ssid: Vec<heapless::String<32>>,
 }
 

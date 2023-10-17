@@ -74,6 +74,7 @@ fn connect(
 #[derive(Debug)]
 pub enum ScanMessage {
     Request,
+    // TODO: replace this with Vec<NetworkSSID>
     Response(Vec<heapless::String<32>>),
 }
 

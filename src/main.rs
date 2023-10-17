@@ -11,9 +11,12 @@ pub mod client;
 pub mod led;
 pub mod otp;
 
+// TODO: move this to a common lib
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NetworkCredentials {
+    // TODO: replace this with a type Ssid
     ssid: heapless::String<32>,
+    // TODO: replace this with a type Password
     password: heapless::String<64>,
 }
 
