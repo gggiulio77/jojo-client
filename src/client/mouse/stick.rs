@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
-use bus::BusReader;
 use esp_idf_hal::{
     adc::{self, *},
     delay::FreeRtos,
-    gpio::{AnyIOPin, Gpio5, Gpio6, Gpio7, IOPin, Input, PinDriver, Pull},
+    gpio::{Gpio5, Gpio6},
 };
+use jojo_common::message::{ClientMessage, Reads};
 use log::*;
 use parking_lot::{Condvar, Mutex};
-
-use super::websocket;
 
 pub struct StickTask {
     adc1: ADC1,
@@ -17,10 +15,7 @@ pub struct StickTask {
     gpio_x: Gpio5,
     // TODO: replace with a generic, restricted to ADC1 GPIOs
     gpio_y: Gpio6,
-    // TODO: add click gpio
-    gpio_click: Gpio7,
-    stick_tx: crossbeam_channel::Sender<websocket::MouseRead>,
-    bt_rx: BusReader<bool>,
+    websocket_sender_tx: crossbeam_channel::Sender<jojo_common::message::ClientMessage>,
     wifi_status: Arc<(Mutex<bool>, Condvar)>,
 }
 
@@ -29,18 +24,15 @@ impl StickTask {
         adc1: ADC1,
         gpio_x: Gpio5,
         gpio_y: Gpio6,
-        gpio_click: Gpio7,
-        stick_tx: crossbeam_channel::Sender<websocket::MouseRead>,
-        bt_rx: BusReader<bool>,
+        // TODO: replace with stick_websocket_sender_tx and websocket Message Reads
+        websocket_sender_tx: crossbeam_channel::Sender<jojo_common::message::ClientMessage>,
         wifi_status: Arc<(Mutex<bool>, Condvar)>,
     ) -> Self {
         StickTask {
             adc1,
             gpio_x,
             gpio_y,
-            gpio_click,
-            stick_tx,
-            bt_rx,
+            websocket_sender_tx,
             wifi_status,
         }
     }
@@ -85,25 +77,23 @@ pub struct StickRead {
     x_read: u16,
     y_read: u16,
     // TODO: generalize to all mouse buttons
-    click_read: bool,
     calibration: StickCalibration,
 }
 
 impl StickRead {
-    pub fn new(x_read: u16, y_read: u16, click_read: bool, calibration: StickCalibration) -> Self {
+    pub fn new(x_read: u16, y_read: u16, calibration: StickCalibration) -> Self {
         StickRead {
             x_read,
             y_read,
-            click_read,
             calibration,
         }
     }
 }
 
-impl Into<websocket::MouseRead> for StickRead {
+impl Into<jojo_common::mouse::MouseRead> for StickRead {
     // type Error = anyhow::Error;
 
-    fn into(self) -> websocket::MouseRead {
+    fn into(self) -> jojo_common::mouse::MouseRead {
         let StickCalibration {
             x_b,
             y_b,
@@ -127,22 +117,13 @@ impl Into<websocket::MouseRead> for StickRead {
             (y_m * self.y_read as f32).round() as i32 + y_b
         };
 
-        websocket::MouseRead::new(x_read, y_read, self.click_read)
+        jojo_common::mouse::MouseRead::new(x_read, y_read)
     }
-}
-
-fn init_button(btn_pin: Gpio7) -> anyhow::Result<PinDriver<'static, AnyIOPin, Input>> {
-    // Config pin
-    let mut btn = PinDriver::input(btn_pin.downgrade())?;
-    btn.set_pull(Pull::Up)?;
-
-    return Ok(btn);
 }
 
 enum ReadStates {
     Calibrating,
     Reading(StickCalibration),
-    Paused,
 }
 
 struct ReadState {
@@ -171,7 +152,7 @@ impl ReadState {
         self
     }
 
-    pub fn to_calibrating(&mut self) -> &Self {
+    pub fn _to_calibrating(&mut self) -> &Self {
         info!("[stick_task]:state_calibrating");
         self.to_state(ReadStates::Calibrating)
     }
@@ -180,11 +161,6 @@ impl ReadState {
         info!("[stick_task]:state_reading");
         self.to_state(ReadStates::Reading(calibration))
     }
-
-    pub fn to_paused(&mut self) -> &Self {
-        info!("[stick_task]:state_pausing");
-        self.to_state(ReadStates::Paused)
-    }
 }
 
 pub fn init_task(task: StickTask) {
@@ -192,9 +168,7 @@ pub fn init_task(task: StickTask) {
         adc1,
         gpio_x,
         gpio_y,
-        gpio_click,
-        stick_tx,
-        mut bt_rx,
+        websocket_sender_tx,
         wifi_status,
     } = task;
 
@@ -207,8 +181,6 @@ pub fn init_task(task: StickTask) {
 
     let mut y_adc_channel = AdcChannelDriver::<_, Atten11dB<ADC1>>::new(gpio_y).unwrap();
 
-    let click_btn = init_button(gpio_click).unwrap();
-
     let (lock, cvar) = &*wifi_status;
 
     let mut started = lock.lock();
@@ -217,9 +189,6 @@ pub fn init_task(task: StickTask) {
         cvar.wait(&mut started);
     }
     drop(started);
-
-    // TODO: generalize to all mouse buttons states
-    let mut click_state = true;
 
     let mut main_state = ReadState::default();
 
@@ -237,38 +206,32 @@ pub fn init_task(task: StickTask) {
 
                 main_state.to_reading(calibration);
             }
-            ReadStates::Reading(calibration) => 'label: {
-                if let Ok(_) = bt_rx.try_recv() {
-                    info!("Pausing Stick");
-                    main_state.to_paused();
-                    break 'label;
-                }
-
+            ReadStates::Reading(calibration) => {
                 // TODO: review this approach, maybe it make sense to accumulate reads instead of sending one at a time
                 let x_read = adc_driver.read(&mut x_adc_channel).unwrap();
 
                 let y_read = adc_driver.read(&mut y_adc_channel).unwrap();
 
-                let click_read = click_btn.is_high();
+                let mut mouse_read: jojo_common::mouse::MouseRead =
+                    StickRead::new(x_read, y_read, *calibration).into();
 
-                let mouse_read: websocket::MouseRead =
-                    StickRead::new(x_read, y_read, click_read, *calibration).into();
+                let mouse_config = jojo_common::mouse::MouseConfig::default();
 
-                let (x_read, y_read, _) = mouse_read.reads();
+                mouse_read = jojo_common::mouse::MouseRead::new(
+                    mouse_read.x_read() * i32::from(mouse_config.x_sen()),
+                    mouse_read.y_read() * i32::from(mouse_config.y_sen()),
+                );
 
-                if x_read != 0 || y_read != 0 || click_read != click_state {
-                    click_state = click_read;
-
-                    stick_tx.try_send(mouse_read).unwrap();
+                if mouse_read.x_read() != 0 || mouse_read.y_read() != 0 {
+                    websocket_sender_tx
+                        .try_send(ClientMessage::Reads(vec![Reads::new(
+                            Some(mouse_read),
+                            None,
+                        )]))
+                        .unwrap();
                 }
 
                 FreeRtos::delay_ms(20);
-            }
-            ReadStates::Paused => {
-                if let Ok(_) = bt_rx.try_recv() {
-                    main_state.to_calibrating();
-                }
-                FreeRtos::delay_ms(500);
             }
         }
     }
