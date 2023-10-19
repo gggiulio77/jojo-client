@@ -64,7 +64,7 @@ tungstenite = "0.20.x"
 bincode = "1.3.3"
 bus = "2.4.0"
 heapless = { version = "0.7.16", features = ["serde"] }
-jojo_common = { path = "C:/Users/gggiu/Documents/personal-projects/rust/jojo_common" }
+jojo-common = { path = "C:/Users/gggiu/Documents/personal-projects/rust/jojo-common" }
 uuid = { version = "1.4.1", features = ["v4", "fast-rng", "serde"] }
 
 [build-dependencies]

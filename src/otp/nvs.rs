@@ -2,18 +2,18 @@ use esp_idf_hal::delay::FreeRtos;
 use esp_idf_svc::nvs::{EspNvs, NvsDefault};
 use log::*;
 
-use crate::{NetworkCredentials, NETWORK_TAG};
+use crate::NETWORK_TAG;
 
 // TODO: think about make this task more generic to be use by otp and client
 pub struct NvsTask {
     nvs_namespace: EspNvs<NvsDefault>,
-    nvs_rx: crossbeam_channel::Receiver<NetworkCredentials>,
+    nvs_rx: crossbeam_channel::Receiver<jojo_common::network::NetworkCredentials>,
 }
 
 impl NvsTask {
     pub fn new(
         nvs_namespace: EspNvs<NvsDefault>,
-        nvs_rx: crossbeam_channel::Receiver<NetworkCredentials>,
+        nvs_rx: crossbeam_channel::Receiver<jojo_common::network::NetworkCredentials>,
     ) -> Self {
         NvsTask {
             nvs_namespace,

@@ -4,39 +4,18 @@ use esp_idf_svc::{
 };
 use esp_idf_sys::{self as _};
 use log::*;
-use serde::{Deserialize, Serialize};
 
 pub mod button;
 pub mod client;
 pub mod led;
 pub mod otp;
 
-// TODO: move this to a common lib
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NetworkCredentials {
-    // TODO: replace this with a type Ssid
-    ssid: heapless::String<32>,
-    // TODO: replace this with a type Password
-    password: heapless::String<64>,
-}
-
-impl NetworkCredentials {
-    pub fn new(ssid: heapless::String<32>, password: heapless::String<64>) -> Self {
-        NetworkCredentials { ssid, password }
-    }
-}
-
-impl Default for NetworkCredentials {
-    fn default() -> Self {
-        let ssid = heapless::String::from("DefaultSSID");
-        let password = heapless::String::from("DefaultPassword");
-        NetworkCredentials::new(ssid, password)
-    }
-}
-
 enum AppState {
     OTP(EspNvsPartition<NvsDefault>, EspNvs<NvsDefault>),
-    CLIENT(EspNvsPartition<NvsDefault>, NetworkCredentials),
+    CLIENT(
+        EspNvsPartition<NvsDefault>,
+        jojo_common::network::NetworkCredentials,
+    ),
 }
 
 const NAMESPACE: &'static str = env!("NAMESPACE");
@@ -50,7 +29,7 @@ fn main() -> anyhow::Result<()> {
 
     let nvs_default: EspNvsPartition<NvsDefault> = EspDefaultNvsPartition::take().unwrap();
 
-    let nvs_namespace = match EspNvs::new(nvs_default.clone(), NAMESPACE, true) {
+    let mut nvs_namespace = match EspNvs::new(nvs_default.clone(), NAMESPACE, true) {
         Ok(nvs) => {
             info!("Got namespace {:?} from default partition", NAMESPACE);
             nvs
@@ -60,10 +39,14 @@ fn main() -> anyhow::Result<()> {
 
     let buffer: &mut [u8] = &mut [0; 200];
 
+    // nvs_namespace.remove(NETWORK_TAG).unwrap();
+
     let state: AppState = match nvs_namespace.get_raw(NETWORK_TAG, buffer)? {
         Some(network_credentials) => {
-            let decode: NetworkCredentials = bincode::deserialize(network_credentials)?;
+            let decode: jojo_common::network::NetworkCredentials =
+                bincode::deserialize(network_credentials)?;
             info!("[main_task]: Network credentials found: {:?}", decode);
+
             AppState::CLIENT(nvs_default, decode)
         }
         None => {

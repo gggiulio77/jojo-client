@@ -17,13 +17,13 @@ pub mod mouse;
 pub mod websocket;
 pub mod wifi_client;
 
-use crate::{button, client::broadcast::BroadcastTask, led, NetworkCredentials};
+use crate::{button, client::broadcast::BroadcastTask, led};
 
 const WEBSOCKET_PATH: &'static str = env!("WEBSOCKET_PATH");
 
 pub fn main(
     nvs_default: EspNvsPartition<NvsDefault>,
-    network_credentials: NetworkCredentials,
+    network_credentials: jojo_common::network::NetworkCredentials,
 ) -> anyhow::Result<()> {
     info!("[client_task]: init");
 
@@ -66,8 +66,8 @@ pub fn main(
                 Some(nvs_default),
                 timer_service,
                 wifi_status,
-                network_credentials.ssid.as_str(),
-                network_credentials.password.as_str(),
+                network_credentials.ssid.to_string().as_str(),
+                network_credentials.password.to_string().as_str(),
             ))
         })?;
 

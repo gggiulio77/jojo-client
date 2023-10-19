@@ -74,14 +74,14 @@ fn connect(
 #[derive(Debug)]
 pub enum ScanMessage {
     Request,
-    // TODO: replace this with Vec<NetworkSSID>
-    Response(Vec<heapless::String<32>>),
+    // TODO: find a way to wrap jojo_common::network::Ssid to work with heapless
+    Response(Vec<jojo_common::network::Ssid>),
 }
 
 fn scan(
     wifi: &mut BlockingWifi<EspWifi<'static>>,
-) -> anyhow::Result<(Vec<heapless::String<32>>, usize)> {
-    let mut vec_ssid: Vec<heapless::String<32>> = Vec::new();
+) -> anyhow::Result<(Vec<jojo_common::network::Ssid>, usize)> {
+    let mut vec_ssid: Vec<jojo_common::network::Ssid> = Vec::new();
 
     for channel in (1..=11).rev() {
         wifi.wifi_mut().start_scan(
@@ -97,7 +97,8 @@ fn scan(
         if let Ok(result) = wifi.wifi_mut().get_scan_result() {
             result.into_iter().for_each(|network| {
                 if network.signal_strength > -50 {
-                    vec_ssid.push(network.ssid);
+                    // TODO: find a way to wrap jojo_common::network::Ssid to work with heapless
+                    vec_ssid.push(network.ssid.to_string().try_into().unwrap());
                 }
             });
         }

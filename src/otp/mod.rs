@@ -10,11 +10,11 @@ use log::*;
 use parking_lot::{Condvar, Mutex};
 use rgb::RGB8;
 
-pub mod server;
 pub mod nvs;
+pub mod server;
 pub mod wifi_otp;
 
-use crate::{led, NetworkCredentials};
+use crate::led;
 
 pub fn main(
     nvs_default: EspNvsPartition<NvsDefault>,
@@ -33,7 +33,7 @@ pub fn main(
 
     let (wifi_scan_tx, wifi_scan_rx) = unbounded::<wifi_otp::ScanMessage>();
     let (server_scan_tx, server_scan_rx) = unbounded::<wifi_otp::ScanMessage>();
-    let (nvs_tx, nvs_rx) = unbounded::<NetworkCredentials>();
+    let (nvs_tx, nvs_rx) = unbounded::<jojo_common::network::NetworkCredentials>();
 
     let wifi_status = Arc::new((Mutex::new(false), Condvar::new()));
     let wifi_status_server = Arc::clone(&wifi_status);
