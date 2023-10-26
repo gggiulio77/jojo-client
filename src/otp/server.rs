@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use embedded_svc::{
-    http::server::{Connection, Handler, HandlerError, HandlerResult, Method, Middleware, Request},
-    io::Write,
-    utils,
-};
 use esp_idf_hal::delay::FreeRtos;
-use esp_idf_svc::http::server::{
-    fn_handler, Configuration as HttpServerConfiguration, EspHttpConnection, EspHttpServer,
+use esp_idf_svc::http::Method;
+use esp_idf_svc::{
+    http::server::{
+        fn_handler, Configuration as HttpServerConfiguration, Connection, EspHttpConnection,
+        EspHttpServer, Handler, HandlerError, HandlerResult, Middleware, Request,
+    },
+    io::{utils, Write},
 };
 use log::*;
 use parking_lot::{Condvar, Mutex};
@@ -135,7 +135,7 @@ fn save_credentials(
     let (_, mut body) = request.split();
 
     let mut buf = [0u8; 512];
-    let bytes_read = utils::io::try_read_full(&mut body, &mut buf).map_err(|e| e.0)?;
+    let bytes_read = utils::try_read_full(&mut body, &mut buf).map_err(|e| e.0)?;
 
     let network_credentials: jojo_common::network::NetworkCredentials =
         serde_json::from_slice(&buf[0..bytes_read])?;

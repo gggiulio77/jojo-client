@@ -3,7 +3,7 @@ use esp_idf_hal::{
     gpio::{AnyIOPin, Gpio7, IOPin, Input, PinDriver, Pull},
 };
 use jojo_common::{
-    button::{Button, ButtonRead},
+    button::ButtonRead,
     message::{ClientMessage, Reads},
     mouse::{MouseButton, MouseButtonState},
 };
@@ -122,8 +122,8 @@ pub fn init_task(task: LeftClickTask) {
                     websocket_sender_tx
                         .try_send(ClientMessage::Reads(vec![Reads::new(
                             None,
-                            Some(vec![ButtonRead::new(Button::MouseButton(
-                                MouseButton::Left(main_state.left_click),
+                            Some(vec![ButtonRead::MouseButton(MouseButton::Left(
+                                main_state.left_click,
                             ))]),
                         )]))
                         .unwrap();

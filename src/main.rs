@@ -2,7 +2,6 @@ use esp_idf_svc::{
     log::EspLogger,
     nvs::{EspDefaultNvsPartition, EspNvs, EspNvsPartition, NvsDefault},
 };
-use esp_idf_sys::{self as _};
 use log::*;
 
 pub mod button;
@@ -23,7 +22,7 @@ const NAMESPACE: &'static str = env!("NAMESPACE");
 pub const NETWORK_TAG: &'static str = "client_cred";
 
 fn main() -> anyhow::Result<()> {
-    esp_idf_sys::link_patches();
+    esp_idf_svc::sys::link_patches();
 
     EspLogger::initialize_default();
 

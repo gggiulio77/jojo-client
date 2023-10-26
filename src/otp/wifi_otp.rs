@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use embedded_svc::wifi::{
-    AccessPointConfiguration, AuthMethod, ClientConfiguration, Configuration,
-};
 use esp_idf_hal::{delay::FreeRtos, modem::Modem};
 use esp_idf_svc::{
     eventloop::{EspEventLoop, System},
     nvs::{EspNvsPartition, NvsDefault},
-    wifi::{config::ScanConfig, BlockingWifi, EspWifi},
+    wifi::{
+        config::ScanConfig, AccessPointConfiguration, AuthMethod, BlockingWifi,
+        ClientConfiguration, Configuration, EspWifi,
+    },
 };
 use log::*;
 use parking_lot::{Condvar, Mutex};

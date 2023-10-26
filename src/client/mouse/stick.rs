@@ -176,10 +176,11 @@ pub fn init_task(task: StickTask) {
     let mut adc_driver =
         AdcDriver::new(adc1, &adc::config::Config::new().calibration(true)).unwrap();
 
-    let mut x_adc_channel: AdcChannelDriver<'_, Gpio5, Atten11dB<ADC1>> =
-        AdcChannelDriver::<_, Atten11dB<ADC1>>::new(gpio_x).unwrap();
+    let mut x_adc_channel: AdcChannelDriver<{ attenuation::DB_11 }, Gpio5> =
+        AdcChannelDriver::new(gpio_x).unwrap();
 
-    let mut y_adc_channel = AdcChannelDriver::<_, Atten11dB<ADC1>>::new(gpio_y).unwrap();
+    let mut y_adc_channel: AdcChannelDriver<{ attenuation::DB_11 }, Gpio6> =
+        AdcChannelDriver::new(gpio_y).unwrap();
 
     let (lock, cvar) = &*wifi_status;
 

@@ -127,6 +127,7 @@ pub fn init_task(task: WebsocketTask) {
                 let socket_rx = socket_tx.clone();
 
                 info!("[websocket_task]:Sending Device");
+                // TODO: replace hardcoded device with value living in flash
                 let device = jojo_common::device::Device::new(
                     uuid!("340917e8-87a9-455c-9645-d08eb99162f9"),
                     "test".to_string(),
@@ -144,6 +145,7 @@ pub fn init_task(task: WebsocketTask) {
 
                 info!("[websocket_task]: init read task");
 
+                // Task to read from websocket
                 let _ = std::thread::Builder::new()
                     .stack_size(6 * 1024)
                     .spawn(move || loop {
@@ -158,6 +160,7 @@ pub fn init_task(task: WebsocketTask) {
 
                 info!("[websocket_task]: init write task");
 
+                // Task to write to websocket
                 let _ = std::thread::Builder::new()
                     .stack_size(6 * 1024)
                     .spawn(move || loop {
