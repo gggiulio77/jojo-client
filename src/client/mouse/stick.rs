@@ -1,8 +1,7 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use esp_idf_hal::{
     adc::{self, *},
-    delay::FreeRtos,
     gpio::{Gpio5, Gpio6},
 };
 use jojo_common::message::{ClientMessage, Reads};
@@ -16,7 +15,7 @@ pub struct StickTask {
     // TODO: replace with a generic, restricted to ADC1 GPIOs
     gpio_y: Gpio6,
     websocket_sender_tx: crossbeam_channel::Sender<jojo_common::message::ClientMessage>,
-    wifi_status: Arc<(Mutex<bool>, Condvar)>,
+    wb_status: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl StickTask {
@@ -26,14 +25,14 @@ impl StickTask {
         gpio_y: Gpio6,
         // TODO: replace with stick_websocket_sender_tx and websocket Message Reads
         websocket_sender_tx: crossbeam_channel::Sender<jojo_common::message::ClientMessage>,
-        wifi_status: Arc<(Mutex<bool>, Condvar)>,
+        wb_status: Arc<(Mutex<bool>, Condvar)>,
     ) -> Self {
         StickTask {
             adc1,
             gpio_x,
             gpio_y,
             websocket_sender_tx,
-            wifi_status,
+            wb_status,
         }
     }
 }
@@ -169,7 +168,7 @@ pub fn init_task(task: StickTask) {
         gpio_x,
         gpio_y,
         websocket_sender_tx,
-        wifi_status,
+        wb_status,
     } = task;
 
     info!("[stick_task]:creating");
@@ -182,7 +181,7 @@ pub fn init_task(task: StickTask) {
     let mut y_adc_channel: AdcChannelDriver<{ attenuation::DB_11 }, Gpio6> =
         AdcChannelDriver::new(gpio_y).unwrap();
 
-    let (lock, cvar) = &*wifi_status;
+    let (lock, cvar) = &*wb_status;
 
     let mut started = lock.lock();
 
@@ -192,7 +191,6 @@ pub fn init_task(task: StickTask) {
     drop(started);
 
     let mut main_state = ReadState::default();
-
     loop {
         match main_state.state() {
             ReadStates::Calibrating => {
@@ -232,8 +230,9 @@ pub fn init_task(task: StickTask) {
                         .unwrap();
                 }
 
-                FreeRtos::delay_ms(20);
+                // std::thread::sleep(Duration::from_millis(20));
             }
         }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
