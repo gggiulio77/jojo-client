@@ -83,8 +83,6 @@ pub fn connect_task(task: ConnectTask) {
         password,
     } = task;
 
-    let (lock, cvar) = &*status;
-
     let mut wifi_config = AsyncWifi::wrap(
         EspWifi::new(modem, sys_loop.clone(), nvs).unwrap(),
         sys_loop,
@@ -94,6 +92,7 @@ pub fn connect_task(task: ConnectTask) {
 
     block_on(connect(&mut wifi_config, ssid, password)).unwrap();
 
+    let (lock, cvar) = &*status;
     // Write value to mutex
     *lock.lock() = true;
     cvar.notify_all();

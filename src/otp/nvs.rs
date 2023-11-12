@@ -1,4 +1,5 @@
-use esp_idf_hal::delay::FreeRtos;
+use std::time::Duration;
+
 use esp_idf_svc::nvs::{EspNvs, NvsDefault};
 use log::*;
 
@@ -45,6 +46,6 @@ pub fn init_task(task: NvsTask) {
             };
         }
 
-        FreeRtos::delay_ms(500);
+        std::thread::sleep(Duration::from_millis(500));
     }
 }

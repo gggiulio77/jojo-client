@@ -1,9 +1,9 @@
 use std::{
     net::{SocketAddr, UdpSocket},
     sync::Arc,
+    time::Duration,
 };
 
-use esp_idf_hal::delay::FreeRtos;
 use log::*;
 use parking_lot::{Condvar, Mutex};
 
@@ -56,7 +56,7 @@ pub fn init_task(task: BroadcastTask) -> anyhow::Result<()> {
     let (sender_tx, sender_rx) = crossbeam_channel::unbounded::<bool>();
 
     let _ = std::thread::Builder::new()
-        .stack_size(2 * 1024)
+        .stack_size(4 * 1024)
         .spawn(move || loop {
             if let Ok(_) = sender_rx.try_recv() {
                 info!("[sender_task]: ending task");
@@ -68,7 +68,7 @@ pub fn init_task(task: BroadcastTask) -> anyhow::Result<()> {
                 .send_to("hello".as_bytes(), BROADCAST_ADDRESS)
                 .unwrap();
 
-            FreeRtos::delay_ms(1000);
+            std::thread::sleep(Duration::from_millis(1000));
         })
         .unwrap();
 

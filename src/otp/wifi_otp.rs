@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use esp_idf_hal::{delay::FreeRtos, modem::Modem};
+use esp_idf_hal::modem::Modem;
 use esp_idf_svc::{
     eventloop::{EspEventLoop, System},
     nvs::{EspNvsPartition, NvsDefault},
@@ -92,7 +92,7 @@ fn scan(
             false,
         )?;
 
-        FreeRtos::delay_ms(150);
+        std::thread::sleep(Duration::from_millis(150));
 
         if let Ok(result) = wifi.wifi_mut().get_scan_result() {
             result.into_iter().for_each(|network| {
@@ -157,6 +157,6 @@ pub fn connect_task(task: ConnectTask) {
             }
         }
 
-        FreeRtos::delay_ms(100);
+        std::thread::sleep(Duration::from_millis(100));
     }
 }

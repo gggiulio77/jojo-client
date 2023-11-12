@@ -1,6 +1,6 @@
 use std::sync::Arc;
+use std::time::Duration;
 
-use esp_idf_hal::delay::FreeRtos;
 use esp_idf_svc::http::Method;
 use esp_idf_svc::{
     http::server::{
@@ -115,7 +115,7 @@ fn scan(
                 buffer_scan_result.append(&mut scan_result.clone().try_into().unwrap());
                 break;
             }
-            FreeRtos::delay_ms(100);
+            std::thread::sleep(Duration::from_millis(100));
         };
     }
 
@@ -200,6 +200,6 @@ pub fn init_task(task: ServerTask) {
     // TODO: think about adding a restart endpoint
 
     loop {
-        FreeRtos::delay_ms(1000);
+        std::thread::sleep(Duration::from_millis(1000));
     }
 }
