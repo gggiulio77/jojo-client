@@ -1,34 +1,34 @@
-use esp_idf_hal::{
-    delay::FreeRtos,
-    gpio::{AnyIOPin, Gpio7, IOPin, Input, PinDriver, Pull},
-};
+use esp_idf_hal::gpio::{AnyIOPin, Gpio7, IOPin, Input, PinDriver, Pull};
 use jojo_common::{
-    button::ButtonRead,
+    button::ButtonAction,
     message::{ClientMessage, Reads},
-    mouse::{MouseButton, MouseButtonState},
+    mouse::MouseButtonState,
 };
 use log::*;
 use parking_lot::{Condvar, Mutex};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 pub struct LeftClickTask {
     // TODO: add click gpio
-    gpio_click: Gpio7,
+    gpio: Gpio7,
     websocket_sender_tx: crossbeam_channel::Sender<jojo_common::message::ClientMessage>,
-    wifi_status: Arc<(Mutex<bool>, Condvar)>,
+    wb_status: Arc<(Mutex<bool>, Condvar)>,
+    button_action: ButtonAction, // TODO: think about replace this with the action
 }
 
 impl LeftClickTask {
     pub fn new(
-        gpio_click: Gpio7,
-        // TODO: replace with stick_websocket_sender_tx and websocket Message Reads
+        gpio: Gpio7, // TODO: test replace Gpio7 with AnyIOPin
+        // TODO: replace with gpio7_websocket_sender_tx and websocket Message Reads
         websocket_sender_tx: crossbeam_channel::Sender<jojo_common::message::ClientMessage>,
-        wifi_status: Arc<(Mutex<bool>, Condvar)>,
+        wb_status: Arc<(Mutex<bool>, Condvar)>,
+        button_action: ButtonAction,
     ) -> Self {
         LeftClickTask {
-            gpio_click,
+            gpio,
             websocket_sender_tx,
-            wifi_status,
+            wb_status,
+            button_action,
         }
     }
 }
@@ -49,7 +49,7 @@ enum ReadStates {
 #[derive(Debug, Clone, Copy)]
 struct ReadState {
     current_state: ReadStates,
-    left_click: jojo_common::mouse::MouseButtonState,
+    button_state: jojo_common::mouse::MouseButtonState,
 }
 
 impl Default for ReadState {
@@ -62,10 +62,10 @@ impl Default for ReadState {
 }
 
 impl ReadState {
-    pub fn new(init_state: ReadStates, left_click: jojo_common::mouse::MouseButtonState) -> Self {
+    pub fn new(init_state: ReadStates, button_state: jojo_common::mouse::MouseButtonState) -> Self {
         ReadState {
             current_state: init_state,
-            left_click,
+            button_state,
         }
     }
 
@@ -79,23 +79,24 @@ impl ReadState {
     }
 
     pub fn to_reading(&mut self) -> &Self {
-        info!("[stick_task]:state_reading");
+        info!("[gpio7_task]:state_reading");
         self.to_state(ReadStates::Reading)
     }
 }
 
 pub fn init_task(task: LeftClickTask) {
     let LeftClickTask {
-        gpio_click,
+        gpio,
         websocket_sender_tx,
-        wifi_status,
+        wb_status,
+        button_action,
     } = task;
 
-    info!("[stick_task]:creating");
+    info!("[gpio7_task]:creating");
 
-    let click_btn = init_button(gpio_click).unwrap();
+    let click_btn = init_button(gpio).unwrap();
 
-    let (lock, cvar) = &*wifi_status;
+    let (lock, cvar) = &*wb_status;
 
     let mut started = lock.lock();
 
@@ -106,30 +107,48 @@ pub fn init_task(task: LeftClickTask) {
 
     let mut main_state = ReadState::default();
 
+    // TODO: we need to read what action this button trigger in device dynamically
     loop {
         match main_state.state() {
             ReadStates::Reading => {
-                // TODO: review this approach, maybe it make sense to accumulate reads instead of sending one at a time
-                let button_read = if click_btn.is_high() {
-                    MouseButtonState::Up
-                } else {
-                    MouseButtonState::Down
-                };
+                match button_action {
+                    ButtonAction::MouseButton(ref button, state) => {
+                        // This flow is for button that use the state of the button, such a mouse click
+                        let button_read = if click_btn.is_high() {
+                            state.to_owned()
+                        } else {
+                            MouseButtonState::Down
+                        };
 
-                if main_state.left_click != button_read {
-                    main_state.left_click = button_read;
+                        if main_state.button_state != button_read {
+                            main_state.button_state = button_read;
 
-                    websocket_sender_tx
-                        .try_send(ClientMessage::Reads(vec![Reads::new(
-                            None,
-                            Some(vec![ButtonRead::MouseButton(MouseButton::Left(
-                                main_state.left_click,
-                            ))]),
-                        )]))
-                        .unwrap();
+                            websocket_sender_tx
+                                .try_send(ClientMessage::Reads(vec![Reads::new(
+                                    None,
+                                    Some(vec![ButtonAction::MouseButton(
+                                        button.to_owned(),
+                                        button_read,
+                                    )]),
+                                )]))
+                                .unwrap();
+                        }
+                    }
+                    ButtonAction::KeyboardButton(ref button) => {
+                        // This flow is for click actions, we don't care about the button state
+                        if click_btn.is_low() {
+                            websocket_sender_tx
+                                .try_send(ClientMessage::Reads(vec![Reads::new(
+                                    None,
+                                    Some(vec![ButtonAction::KeyboardButton(button.to_owned())]),
+                                )]))
+                                .unwrap();
+                        };
+                    }
+                    ButtonAction::CustomButton(_) => todo!(),
                 }
-
-                FreeRtos::delay_ms(20);
+                // TODO: maybe we can move this tu a button handler and generalize a STATE_CASE and a CLICK_CASE to manage different logics
+                std::thread::sleep(Duration::from_millis(20));
             }
         }
     }
