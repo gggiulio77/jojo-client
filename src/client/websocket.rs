@@ -113,8 +113,9 @@ pub fn init_task(task: WebsocketTask) {
                 // stream.set_nonblocking(true).unwrap();
 
                 // This let us reduce the "blocking" while reading from websocket
+                // TODO: review this value, i think a low value creates a INTERRUPTED:HANDSHAKE error
                 stream
-                    .set_read_timeout(Some(Duration::from_millis(10)))
+                    .set_read_timeout(Some(Duration::from_millis(40)))
                     .unwrap();
 
                 let (socket, _broadcast_discovery) = client_with_config(
@@ -125,21 +126,14 @@ pub fn init_task(task: WebsocketTask) {
                         max_message_size: Some(2048),
                         max_write_buffer_size: 2048,
                         max_frame_size: Some(2048),
-                        accept_unmasked_frames: true,
+                        accept_unmasked_frames: false,
                         ..WebSocketConfig::default()
                     }),
                 )
                 .unwrap();
-
                 main_state.to_connected(socket);
             }
             WebsocketStates::Connected(socket) => {
-                let (lock, cvar) = &*status;
-                // Write value to mutex
-                *lock.lock() = true;
-                cvar.notify_all();
-                drop(status);
-
                 let socket_tx = Arc::new(parking_lot::Mutex::new(socket));
                 let socket_rx = socket_tx.clone();
 
@@ -158,20 +152,20 @@ pub fn init_task(task: WebsocketTask) {
 
                 // Task to read from websocket
                 let _ = std::thread::Builder::new()
-                    .stack_size(6 * 1024)
+                    .stack_size(3 * 1024)
                     .spawn(move || loop {
                         if let Ok(message) = socket_rx.lock().read() {
                             // info!("[websocket_task]:Rx: {:?}", message);
                             message_handler(message)
                         }
-                        std::thread::sleep(Duration::from_millis(750));
+                        std::thread::sleep(Duration::from_millis(300));
                     })
                     .unwrap();
 
                 info!("[websocket_task]: init write task");
 
                 let _ = std::thread::Builder::new()
-                    .stack_size(22 * 1024)
+                    .stack_size(6 * 1024)
                     .spawn(move || loop {
                         // info!("[websocket_task]: writing to websocket");
                         if let Ok(reads) = websocket_sender_rx.try_recv() {
@@ -195,6 +189,14 @@ pub fn init_task(task: WebsocketTask) {
                     })
                     .unwrap();
 
+                std::thread::sleep(Duration::from_millis(500));
+
+                let (lock, cvar) = &*status;
+                // Write value to mutex
+                *lock.lock() = true;
+                cvar.notify_all();
+                drop(status);
+
                 loop {
                     std::thread::sleep(Duration::from_millis(100));
                 }
@@ -203,7 +205,18 @@ pub fn init_task(task: WebsocketTask) {
     }
 }
 
-// TODO: write this handler, we must manage updating the actions in the device and save it to flash
 pub fn message_handler(message: Message) {
-    info!("[message_handler]: {:?}", message);
+    match message {
+        Message::Binary(server_message) => {
+            match bincode::deserialize::<jojo_common::message::ServerMessage>(&server_message)
+                .unwrap()
+            {
+                jojo_common::message::ServerMessage::UpdateDevice(actions_map) => {
+                    // TODO: we need to update flash with this new actions_map. We need to check if all buttons has actions to not break thins.
+                    // TODO: we can create a channel to communicate with a task owner of flash to update it or maybe pass the nvs handler to this task.
+                }
+            }
+        }
+        _ => info!("[message_handler]: {:?}", message),
+    }
 }
