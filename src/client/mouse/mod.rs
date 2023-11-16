@@ -1,2 +1,2 @@
-pub mod left_click;
+pub mod button;
 pub mod stick;
