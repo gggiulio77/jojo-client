@@ -5,8 +5,9 @@ use esp_idf_svc::{
     nvs::{EspDefaultNvsPartition, EspNvs, EspNvsPartition, NvsDefault},
 };
 use jojo_common::{
-    button::{Button, ButtonAction},
+    button::{Button, ButtonAction, ButtonMode},
     device::Device,
+    keyboard::KeyboardButton,
     mouse::{MouseButton, MouseButtonState, MouseConfig},
 };
 use log::*;
@@ -46,30 +47,50 @@ fn main() -> anyhow::Result<()> {
         Err(e) => panic!("Could't get namespace {:?}", e),
     };
 
-    let buffer: &mut [u8] = &mut [0; 200];
+    let buffer: &mut [u8] = &mut [0; 500];
 
     // nvs_namespace.remove(NETWORK_TAG).unwrap();
 
     // TODO: replace this with something more elegant
     let main_device;
 
+    // nvs_namespace.remove(DEVICE_TAG).unwrap();
+
     if let Some(device) = nvs_namespace.get_raw(DEVICE_TAG, buffer)? {
         main_device = bincode::deserialize(device)?;
         info!("[main_task]: device found in flash {:?}", main_device);
     } else {
         // TODO: create device and store it
-        let left_click_id = uuid::Uuid::new_v4();
-        let left_click = Button::new(left_click_id, String::from("left_click"));
-        let actions = HashMap::from([(
-            left_click_id,
-            ButtonAction::MouseButton(MouseButton::Left, MouseButtonState::Up),
+        let gpio7 = uuid::Uuid::new_v4();
+        let gpio7_button = Button::new(gpio7, String::from("button_0"), ButtonMode::Hold);
+        let mut actions = HashMap::from([(
+            gpio7,
+            vec![ButtonAction::MouseButton(
+                MouseButton::Left,
+                MouseButtonState::Up,
+            )],
         )]);
+
+        let gpio0 = uuid::Uuid::new_v4();
+        let gpio0_button = Button::new(gpio0, String::from("button_1"), ButtonMode::Click);
+        actions.insert(
+            gpio0,
+            vec![
+                ButtonAction::MouseButton(MouseButton::Left, MouseButtonState::Down),
+                ButtonAction::MouseButton(MouseButton::Left, MouseButtonState::Up),
+                ButtonAction::KeyboardButton(KeyboardButton::SequenceDsl(
+                    "{+CTRL}a{-CTRL}".to_string(),
+                )),
+                ButtonAction::MouseButton(MouseButton::Right, MouseButtonState::Down),
+                ButtonAction::MouseButton(MouseButton::Right, MouseButtonState::Up),
+            ],
+        );
 
         let device = Device::new(
             uuid::Uuid::new_v4(),
             String::from("device_1"),
             Some(MouseConfig::new(1, -1)),
-            vec![left_click],
+            vec![gpio7_button, gpio0_button],
             actions,
         );
 
