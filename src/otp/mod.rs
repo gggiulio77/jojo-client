@@ -41,6 +41,7 @@ pub fn main(
     info!("[otp_task]: creating tasks");
 
     let _wifi_thread = std::thread::Builder::new()
+        .name("wifi_thread".into())
         .stack_size(10 * 1024)
         .spawn(move || {
             wifi_otp::connect_task(wifi_otp::ConnectTask::new(
@@ -56,6 +57,7 @@ pub fn main(
         })?;
 
     let _server_thread = std::thread::Builder::new()
+        .name("server_thread".into())
         .stack_size(7 * 1024)
         .spawn(|| {
             server::init_task(server::ServerTask::new(
@@ -68,6 +70,7 @@ pub fn main(
         .unwrap();
 
     let _nvs_thread = std::thread::Builder::new()
+        .name("nvs_thread".into())
         .stack_size(7 * 1024)
         .spawn(|| nvs::init_task(nvs::NvsTask::new(nvs_namespace, nvs_rx)))
         .unwrap();
