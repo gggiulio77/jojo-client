@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use esp_idf_hal::{
     adc::{self, *},
-    gpio::{Gpio5, Gpio6},
+    gpio::{Gpio4, Gpio5},
 };
 use jojo_common::message::{ClientMessage, Reads};
 use log::*;
@@ -13,7 +13,7 @@ pub struct StickTask {
     // TODO: replace with a generic, restricted to ADC1 GPIOs
     gpio_x: Gpio5,
     // TODO: replace with a generic, restricted to ADC1 GPIOs
-    gpio_y: Gpio6,
+    gpio_y: Gpio4,
     websocket_sender_tx: crossbeam_channel::Sender<jojo_common::message::ClientMessage>,
     wb_status: Arc<(Mutex<bool>, Condvar)>,
 }
@@ -22,7 +22,7 @@ impl StickTask {
     pub fn new(
         adc1: ADC1,
         gpio_x: Gpio5,
-        gpio_y: Gpio6,
+        gpio_y: Gpio4,
         // TODO: replace with stick_websocket_sender_tx and websocket Message Reads
         websocket_sender_tx: crossbeam_channel::Sender<jojo_common::message::ClientMessage>,
         wb_status: Arc<(Mutex<bool>, Condvar)>,
@@ -61,10 +61,10 @@ impl StickCalibration {
 
     pub fn calibrate(x_zero_read: u16, y_zero_read: u16) -> Self {
         StickCalibration::new(
-            -20,
-            -20,
-            20.0 / x_zero_read as f32,
-            20.0 / y_zero_read as f32,
+            -65,
+            -65,
+            65.0 / x_zero_read as f32,
+            65.0 / y_zero_read as f32,
             x_zero_read,
             y_zero_read,
         )
@@ -178,7 +178,7 @@ pub fn init_task(task: StickTask) {
     let mut x_adc_channel: AdcChannelDriver<{ attenuation::DB_11 }, Gpio5> =
         AdcChannelDriver::new(gpio_x).unwrap();
 
-    let mut y_adc_channel: AdcChannelDriver<{ attenuation::DB_11 }, Gpio6> =
+    let mut y_adc_channel: AdcChannelDriver<{ attenuation::DB_11 }, Gpio4> =
         AdcChannelDriver::new(gpio_y).unwrap();
 
     let (lock, cvar) = &*wb_status;
@@ -233,6 +233,6 @@ pub fn init_task(task: StickTask) {
                 // std::thread::sleep(Duration::from_millis(20));
             }
         }
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(75));
     }
 }

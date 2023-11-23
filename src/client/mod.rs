@@ -60,6 +60,7 @@ pub fn main(
     info!("[client_task]: creating tasks");
 
     let _wifi_thread = std::thread::Builder::new()
+        .name("wifi_thread".into())
         .stack_size(6 * 1024)
         .spawn(move || {
             wifi_client::connect_task(wifi_client::ConnectTask::new(
@@ -74,13 +75,15 @@ pub fn main(
         })?;
 
     let _broadcast_discovery = std::thread::Builder::new()
+        .name("broadcast_discovery".into())
         .stack_size(6 * 1024)
         .spawn(|| broadcast::init_task(BroadcastTask::new(wifi_status_bd, discovery_tx)))?;
 
     let cloned_device = device.clone();
 
     let _websocket_thread = std::thread::Builder::new()
-        .stack_size(10 * 1024)
+        .name("websocket_thread".into())
+        .stack_size(22 * 1024)
         .spawn(|| {
             websocket::init_task(websocket::WebsocketTask::new(
                 WEBSOCKET_PATH,
@@ -91,20 +94,24 @@ pub fn main(
             ))
         })?;
 
-    let _stick_thread = std::thread::Builder::new().stack_size(8 * 1024).spawn(|| {
-        mouse::stick::init_task(mouse::stick::StickTask::new(
-            peripherals.adc1,
-            peripherals.pins.gpio5,
-            peripherals.pins.gpio6,
-            // TODO: replace with stick_websocket_sender_tx
-            stick_wb_sender_tx,
-            wb_status_stick,
-        ))
-    })?;
+    let _stick_thread = std::thread::Builder::new()
+        .name("stick_thread".into())
+        .stack_size(8 * 1024)
+        .spawn(|| {
+            mouse::stick::init_task(mouse::stick::StickTask::new(
+                peripherals.adc1,
+                peripherals.pins.gpio5,
+                peripherals.pins.gpio4,
+                // TODO: replace with stick_websocket_sender_tx
+                stick_wb_sender_tx,
+                wb_status_stick,
+            ))
+        })?;
 
+    // TODO: find a more idiomatic way of doing this, maybe a builder pattern may help
     let mut gpios: Vec<(AnyIOPin, Pull)> = vec![
         (peripherals.pins.gpio0.into(), Pull::Down),
-        (peripherals.pins.gpio7.into(), Pull::Up),
+        (peripherals.pins.gpio6.into(), Pull::Up),
     ];
 
     let mut actions_map = device.actions_map().clone();
@@ -139,6 +146,7 @@ pub fn main(
         info!("[client_task]: creating gpio task");
 
         let _gpio = std::thread::Builder::new()
+            .name("gpio_thread".into())
             .stack_size(6 * 1024)
             .spawn(move || mouse::button::init_task(button_task))
             .unwrap();

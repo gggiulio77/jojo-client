@@ -61,10 +61,10 @@ fn main() -> anyhow::Result<()> {
         info!("[main_task]: device found in flash {:?}", main_device);
     } else {
         // TODO: create device and store it
-        let gpio7 = uuid::Uuid::new_v4();
-        let gpio7_button = Button::new(gpio7, String::from("button_0"), ButtonMode::Hold);
+        let gpio6 = uuid::Uuid::new_v4();
+        let gpio6_button = Button::new(gpio6, String::from("button_0"), ButtonMode::Hold);
         let mut actions = HashMap::from([(
-            gpio7,
+            gpio6,
             vec![ButtonAction::MouseButton(
                 MouseButton::Left,
                 MouseButtonState::Up,
@@ -90,7 +90,7 @@ fn main() -> anyhow::Result<()> {
             uuid::Uuid::new_v4(),
             String::from("device_1"),
             Some(MouseConfig::new(1, -1)),
-            vec![gpio7_button, gpio0_button],
+            vec![gpio6_button, gpio0_button],
             actions,
         );
 
