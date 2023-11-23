@@ -1,4 +1,3 @@
-use esp_idf_hal::delay::Ets;
 use jojo_common::device::Device;
 use log::*;
 use parking_lot::{Condvar, Mutex};
@@ -152,40 +151,33 @@ pub fn init_task(task: WebsocketTask) {
 
                 // Task to read from websocket
                 let _ = std::thread::Builder::new()
-                    .stack_size(3 * 1024)
+                    .name("wb_rx".into())
+                    .stack_size(6 * 1024)
                     .spawn(move || loop {
-                        if let Ok(message) = socket_rx.lock().read() {
-                            // info!("[websocket_task]:Rx: {:?}", message);
-                            message_handler(message)
+                        if let Some(mut socket) = socket_rx.try_lock() {
+                            if let Ok(message) = socket.read() {
+                                // info!("[websocket_task]:Rx: {:?}", message);
+                                message_handler(message)
+                            }
                         }
-                        std::thread::sleep(Duration::from_millis(300));
+                        std::thread::sleep(Duration::from_millis(500));
                     })
                     .unwrap();
 
                 info!("[websocket_task]: init write task");
 
-                let _ = std::thread::Builder::new()
-                    .stack_size(6 * 1024)
-                    .spawn(move || loop {
-                        // info!("[websocket_task]: writing to websocket");
-                        if let Ok(reads) = websocket_sender_rx.try_recv() {
-                            // info!("[websocket_task]:Tx : {:?}", reads);
-                            socket_tx
-                                .lock()
-                                .send(Message::Binary(bincode::serialize(&reads).unwrap()))
-                                .unwrap();
-                        } else {
-                            // TODO: this is to maintain a "flow" feeling, review why this happen
-                            let empty_message = jojo_common::message::ClientMessage::Reads(vec![
-                                jojo_common::message::Reads::new(None, None),
-                            ]);
-                            socket_tx
-                                .lock()
-                                .send(Message::Binary(bincode::serialize(&empty_message).unwrap()))
-                                .unwrap();
+                std::thread::Builder::new()
+                    .name("wb_tx".into())
+                    .stack_size(14 * 1024)
+                    .spawn(move || {
+                        while let Some(message) = websocket_sender_rx.iter().next() {
+                            if let Some(mut socket) = socket_tx.try_lock() {
+                                socket
+                                    .send(Message::Binary(bincode::serialize(&message).unwrap()))
+                                    .unwrap()
+                            }
+                            std::thread::sleep(Duration::from_millis(10));
                         }
-                        // std::thread::sleep(Duration::from_millis(1));
-                        Ets::delay_us(250);
                     })
                     .unwrap();
 
@@ -198,7 +190,7 @@ pub fn init_task(task: WebsocketTask) {
                 drop(status);
 
                 loop {
-                    std::thread::sleep(Duration::from_millis(100));
+                    std::thread::sleep(Duration::from_millis(1000));
                 }
             }
         }
