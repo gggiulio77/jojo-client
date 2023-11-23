@@ -134,44 +134,48 @@ pub fn init_task(task: ButtonTask) {
         },
     );
 
-    info!("[gpio7]: actions {:?}", button_actions);
-
     // TODO: we need to read what action this button trigger in device dynamically
     loop {
         match main_state.state() {
             ReadStates::Reading => {
-                // List of all actions triggered
-                let mut collect: Vec<ButtonAction> = vec![];
                 // Reading button level
                 let btn_level = btn.get_level();
 
-                match button_mode {
+                let collect: Vec<ButtonAction> = match button_mode {
                     ButtonMode::Hold => {
-                        if main_state.button_level != btn_level {
+                        if main_state.button_level == btn_level {
+                            vec![]
+                        } else {
                             main_state.button_level = btn_level;
 
-                            // TODO: remove this clone, find a better way to populate collect
-                            button_actions.clone().into_iter().for_each(|action| {
-                                if let ButtonAction::MouseButton(button, to_reading) = action {
-                                    let MouseButtonStateExt(state) = main_state.button_level.into();
+                            button_actions
+                                .iter()
+                                .map(|action| {
+                                    // TODO: remove this clone, find a better way to populate collect
+                                    if let ButtonAction::MouseButton(button, _) = action {
+                                        let MouseButtonStateExt(state) =
+                                            main_state.button_level.into();
 
-                                    collect.push(ButtonAction::MouseButton(button, state));
-                                } else {
-                                    collect.push(action);
-                                }
-                            });
+                                        return ButtonAction::MouseButton(button.to_owned(), state);
+                                    } else {
+                                        return action.to_owned();
+                                    }
+                                })
+                                .collect()
                         }
                     }
                     ButtonMode::Click => {
-                        if main_state.button_level != btn_level {
+                        if main_state.button_level == btn_level {
+                            vec![]
+                        } else {
                             main_state.button_level = btn_level;
-
-                            if main_state.button_level == Level::Low {
-                                collect.clone_from(&button_actions);
+                            match main_state.button_level {
+                                Level::Low => button_actions.clone(),
+                                Level::High => vec![],
                             }
                         }
                     }
-                }
+                };
 
                 if collect.len() > 0 {
                     websocket_sender_tx
@@ -179,7 +183,7 @@ pub fn init_task(task: ButtonTask) {
                         .unwrap();
                 };
 
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(35));
             }
         }
     }
