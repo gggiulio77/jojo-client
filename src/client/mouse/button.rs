@@ -1,7 +1,7 @@
 use esp_idf_hal::gpio::{AnyIOPin, IOPin, Input, Level, PinDriver, Pull};
 use jojo_common::{
     button::{ButtonAction, ButtonMode},
-    message::{ClientMessage, Reads},
+    message::ClientMessage,
     mouse::MouseButtonState,
 };
 use log::*;
@@ -179,7 +179,7 @@ pub fn init_task(task: ButtonTask) {
 
                 if collect.len() > 0 {
                     websocket_sender_tx
-                        .try_send(ClientMessage::Reads(vec![Reads::new(None, Some(collect))]))
+                        .try_send(ClientMessage::ButtonActions(collect))
                         .unwrap();
                 };
 

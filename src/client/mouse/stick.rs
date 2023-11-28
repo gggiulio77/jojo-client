@@ -4,7 +4,7 @@ use esp_idf_hal::{
     adc::{self, *},
     gpio::{Gpio4, Gpio5},
 };
-use jojo_common::message::{ClientMessage, Reads};
+use jojo_common::message::ClientMessage;
 use log::*;
 use parking_lot::{Condvar, Mutex};
 
@@ -61,10 +61,10 @@ impl StickCalibration {
 
     pub fn calibrate(x_zero_read: u16, y_zero_read: u16) -> Self {
         StickCalibration::new(
-            -65,
-            -65,
-            65.0 / x_zero_read as f32,
-            65.0 / y_zero_read as f32,
+            -50,
+            -50,
+            50.0 / x_zero_read as f32,
+            50.0 / y_zero_read as f32,
             x_zero_read,
             y_zero_read,
         )
@@ -172,6 +172,7 @@ pub fn init_task(task: StickTask) {
     } = task;
 
     info!("[stick_task]:creating");
+    // TODO: move adc driver to a Mutex static or and Arc<Mutex>, we need it in axis, hat and stick
     let mut adc_driver =
         AdcDriver::new(adc1, &adc::config::Config::new().calibration(true)).unwrap();
 
@@ -194,14 +195,17 @@ pub fn init_task(task: StickTask) {
     loop {
         match main_state.state() {
             ReadStates::Calibrating => {
-                let (mut x_zero_total, mut y_zero_total): (u16, u16) = (0, 0);
-                for _n in 0..10 {
-                    x_zero_total += adc_driver.read(&mut x_adc_channel).unwrap();
+                let x_zero: u16 = (0..10)
+                    .map(|_| adc_driver.read(&mut x_adc_channel).unwrap())
+                    .sum::<u16>()
+                    .div_ceil(10);
 
-                    y_zero_total += adc_driver.read(&mut y_adc_channel).unwrap();
-                }
+                let y_zero: u16 = (0..10)
+                    .map(|_| adc_driver.read(&mut y_adc_channel).unwrap())
+                    .sum::<u16>()
+                    .div_ceil(10);
 
-                let calibration = StickCalibration::calibrate(x_zero_total / 10, y_zero_total / 10);
+                let calibration = StickCalibration::calibrate(x_zero, y_zero);
 
                 main_state.to_reading(calibration);
             }
@@ -223,16 +227,13 @@ pub fn init_task(task: StickTask) {
 
                 if mouse_read.x_read() != 0 || mouse_read.y_read() != 0 {
                     websocket_sender_tx
-                        .try_send(ClientMessage::Reads(vec![Reads::new(
-                            Some(mouse_read),
-                            None,
-                        )]))
+                        .try_send(ClientMessage::MouseRead(mouse_read))
                         .unwrap();
                 }
 
                 // std::thread::sleep(Duration::from_millis(20));
             }
         }
-        std::thread::sleep(Duration::from_millis(75));
+        std::thread::sleep(Duration::from_millis(150));
     }
 }
