@@ -114,7 +114,7 @@ pub fn init_task(task: WebsocketTask) {
                 // This let us reduce the "blocking" while reading from websocket
                 // TODO: review this value, i think a low value creates a INTERRUPTED:HANDSHAKE error
                 stream
-                    .set_read_timeout(Some(Duration::from_millis(40)))
+                    .set_read_timeout(Some(Duration::from_millis(25)))
                     .unwrap();
 
                 let (socket, _broadcast_discovery) = client_with_config(
@@ -130,22 +130,25 @@ pub fn init_task(task: WebsocketTask) {
                     }),
                 )
                 .unwrap();
+
+                std::thread::sleep(Duration::from_millis(500));
+
                 main_state.to_connected(socket);
             }
             WebsocketStates::Connected(socket) => {
                 let socket_tx = Arc::new(parking_lot::Mutex::new(socket));
                 let socket_rx = socket_tx.clone();
 
-                info!("[websocket_task]:Sending Device");
+                {
+                    info!("[websocket_task]:Sending Device");
 
-                let message = jojo_common::message::ClientMessage::Device(device);
+                    let message = jojo_common::message::ClientMessage::Device(device);
 
-                socket_tx
-                    .lock()
-                    .send(Message::Binary(bincode::serialize(&message).unwrap()))
-                    .unwrap();
-
-                drop(message);
+                    socket_tx
+                        .lock()
+                        .send(Message::Binary(bincode::serialize(&message).unwrap()))
+                        .unwrap();
+                }
 
                 info!("[websocket_task]: init read task");
 
@@ -157,10 +160,11 @@ pub fn init_task(task: WebsocketTask) {
                         if let Some(mut socket) = socket_rx.try_lock() {
                             if let Ok(message) = socket.read() {
                                 // info!("[websocket_task]:Rx: {:?}", message);
-                                message_handler(message)
+                                message_handler(message);
+                                socket.flush().unwrap();
                             }
                         }
-                        std::thread::sleep(Duration::from_millis(500));
+                        std::thread::sleep(Duration::from_millis(2500));
                     })
                     .unwrap();
 
@@ -169,15 +173,15 @@ pub fn init_task(task: WebsocketTask) {
                 std::thread::Builder::new()
                     .name("wb_tx".into())
                     .stack_size(14 * 1024)
-                    .spawn(move || {
-                        while let Some(message) = websocket_sender_rx.iter().next() {
+                    .spawn(move || loop {
+                        if let Ok(message) = websocket_sender_rx.try_recv() {
                             if let Some(mut socket) = socket_tx.try_lock() {
                                 socket
                                     .send(Message::Binary(bincode::serialize(&message).unwrap()))
                                     .unwrap()
                             }
-                            std::thread::sleep(Duration::from_millis(10));
                         }
+                        std::thread::sleep(Duration::from_millis(1));
                     })
                     .unwrap();
 
