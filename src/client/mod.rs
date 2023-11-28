@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use crossbeam_channel::unbounded;
 use esp_idf_hal::{
+    adc::{self, AdcChannelDriver, AdcDriver},
     gpio::{AnyIOPin, Pull},
     prelude::Peripherals,
 };
@@ -49,6 +50,7 @@ pub fn main(
     let wb_status = Arc::new((Mutex::new(false), Condvar::new()));
     let wb_status_cloned = Arc::clone(&wb_status);
     let wb_status_stick = Arc::clone(&wb_status);
+    let wb_status_axis = Arc::clone(&wb_status);
 
     // TODO: review this channel, maybe replace it with two broadcast channels, for websocket and discovery
     let (discovery_tx, discovery_rx) = unbounded::<SocketAddr>();
@@ -56,6 +58,7 @@ pub fn main(
     // Channels to send websocket messages
     let (wb_sender_tx, wb_sender_rx) = unbounded::<jojo_common::message::ClientMessage>();
     let stick_wb_sender_tx = wb_sender_tx.clone();
+    let axis_wb_sender_tx = wb_sender_tx.clone();
 
     info!("[client_task]: creating tasks");
 
@@ -94,17 +97,58 @@ pub fn main(
             ))
         })?;
 
-    let _stick_thread = std::thread::Builder::new()
-        .name("stick_thread".into())
+    // TODO: we need a way to know if we have a mouse or a gamepad stick or both. Maybe find a way to store it in flash or made hardcoded code to one device only.
+    // let _stick_thread = std::thread::Builder::new()
+    //     .name("stick_thread".into())
+    //     .stack_size(8 * 1024)
+    //     .spawn(|| {
+    //         mouse::stick::init_task(mouse::stick::StickTask::new(
+    //             peripherals.adc1,
+    //             peripherals.pins.gpio5,
+    //             peripherals.pins.gpio4,
+    //             // TODO: replace with stick_websocket_sender_tx
+    //             stick_wb_sender_tx,
+    //             wb_status_stick,
+    //         ))
+    //     })?;
+
+    // TODO: move all this shit to a build pattern or function
+    let adc_1_driver = Arc::new(Mutex::new(
+        AdcDriver::new(
+            peripherals.adc1,
+            &adc::config::Config::new().calibration(true),
+        )
+        .unwrap(),
+    ));
+    let adc_1_driver_clone = adc_1_driver.clone();
+    let axis_wb_sender_tx_clone = axis_wb_sender_tx.clone();
+    let wb_status_axis_clone = wb_status_axis.clone();
+
+    let _axis_thread = std::thread::Builder::new()
+        .name("axis1_thread".into())
         .stack_size(8 * 1024)
         .spawn(|| {
-            mouse::stick::init_task(mouse::stick::StickTask::new(
-                peripherals.adc1,
-                peripherals.pins.gpio5,
-                peripherals.pins.gpio4,
+            mouse::axis::init_task(mouse::axis::AxisTask::new(
+                adc_1_driver,
+                AdcChannelDriver::new(peripherals.pins.gpio4).unwrap(),
+                jojo_common::gamepad::Axis::Axis1,
                 // TODO: replace with stick_websocket_sender_tx
-                stick_wb_sender_tx,
-                wb_status_stick,
+                axis_wb_sender_tx,
+                wb_status_axis,
+            ))
+        })?;
+
+    let _axis_thread = std::thread::Builder::new()
+        .name("axis2_thread".into())
+        .stack_size(8 * 1024)
+        .spawn(|| {
+            mouse::axis::init_task(mouse::axis::AxisTask::new(
+                adc_1_driver_clone,
+                AdcChannelDriver::new(peripherals.pins.gpio5).unwrap(),
+                jojo_common::gamepad::Axis::Axis2,
+                // TODO: replace with stick_websocket_sender_tx
+                axis_wb_sender_tx_clone,
+                wb_status_axis_clone,
             ))
         })?;
 
