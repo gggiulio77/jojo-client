@@ -1,4 +1,6 @@
-use jojo_common::device::Device;
+use esp_idf_hal::sys::esp_restart;
+use esp_idf_svc::nvs::{EspNvs, NvsDefault};
+use jojo_common::{device::Device, message::ServerMessage};
 use log::*;
 use parking_lot::{Condvar, Mutex};
 use std::{
@@ -9,12 +11,15 @@ use std::{
 
 use tungstenite::{client::client_with_config, protocol::WebSocketConfig, Message, WebSocket};
 
+use crate::{DEVICE_TAG, NETWORK_TAG};
+
 pub struct WebsocketTask<'a> {
     path: &'a str,
     discovery_rx: crossbeam_channel::Receiver<SocketAddr>,
     websocket_sender_rx: crossbeam_channel::Receiver<jojo_common::message::ClientMessage>,
     status: Arc<(Mutex<bool>, Condvar)>,
     device: Device,
+    nvs_namespace: EspNvs<NvsDefault>,
 }
 
 impl<'a> WebsocketTask<'a> {
@@ -24,6 +29,7 @@ impl<'a> WebsocketTask<'a> {
         websocket_sender_rx: crossbeam_channel::Receiver<jojo_common::message::ClientMessage>,
         status: Arc<(Mutex<bool>, Condvar)>,
         device: Device,
+        nvs_namespace: EspNvs<NvsDefault>,
     ) -> Self {
         WebsocketTask {
             path,
@@ -31,6 +37,7 @@ impl<'a> WebsocketTask<'a> {
             websocket_sender_rx,
             status,
             device,
+            nvs_namespace,
         }
     }
 }
@@ -88,6 +95,7 @@ pub fn init_task(task: WebsocketTask) {
         websocket_sender_rx,
         status,
         device,
+        mut nvs_namespace,
     } = task;
 
     let mut main_state = WebsocketState::default();
@@ -138,11 +146,12 @@ pub fn init_task(task: WebsocketTask) {
             WebsocketStates::Connected(socket) => {
                 let socket_tx = Arc::new(parking_lot::Mutex::new(socket));
                 let socket_rx = socket_tx.clone();
+                let clone_device = device.clone();
 
                 {
                     info!("[websocket_task]:Sending Device");
 
-                    let message = jojo_common::message::ClientMessage::Device(device);
+                    let message = jojo_common::message::ClientMessage::Device(clone_device);
 
                     socket_tx
                         .lock()
@@ -155,12 +164,12 @@ pub fn init_task(task: WebsocketTask) {
                 // Task to read from websocket
                 let _ = std::thread::Builder::new()
                     .name("wb_rx".into())
-                    .stack_size(6 * 1024)
+                    .stack_size(8 * 1024)
                     .spawn(move || loop {
                         if let Some(mut socket) = socket_rx.try_lock() {
                             if let Ok(message) = socket.read() {
                                 // info!("[websocket_task]:Rx: {:?}", message);
-                                message_handler(message);
+                                message_handler(message, &device, &mut nvs_namespace);
                                 socket.flush().unwrap();
                             }
                         }
@@ -201,18 +210,69 @@ pub fn init_task(task: WebsocketTask) {
     }
 }
 
-pub fn message_handler(message: Message) {
-    match message {
+pub fn message_handler(
+    wb_message: Message,
+    device: &Device,
+    nvs_namespace: &mut EspNvs<NvsDefault>,
+) {
+    match wb_message {
         Message::Binary(server_message) => {
-            match bincode::deserialize::<jojo_common::message::ServerMessage>(&server_message)
-                .unwrap()
-            {
-                jojo_common::message::ServerMessage::UpdateDevice(actions_map) => {
-                    // TODO: we need to update flash with this new actions_map. We need to check if all buttons has actions to not break thins.
+            let Ok(message) = bincode::deserialize::<ServerMessage>(&server_message) else {
+                error!(
+                    "[message_handler]: {:?} : cannot deserialize message",
+                    server_message
+                );
+                return;
+            };
+
+            match message {
+                ServerMessage::UpdateDevice(_, button_actions) => {
+                    // TODO: we need to update flash with this new actions_map. We need to check if all buttons has actions to not break things.
                     // TODO: we can create a channel to communicate with a task owner of flash to update it or maybe pass the nvs handler to this task.
+                    let mut new_device = device.clone();
+                    let mut new_actions_map = device.actions_map().clone();
+
+                    new_actions_map.extend(button_actions);
+                    new_device.set_actions_map(new_actions_map);
+
+                    info!("[message_handler::UpdateDevice]: updating flash with new device");
+
+                    nvs_namespace
+                        .set_raw(
+                            DEVICE_TAG,
+                            &bincode::serialize(&new_device)
+                                .expect("[message_handler::UpdateDevice]: cannot serialize device"),
+                        )
+                        .expect(
+                            "[message_handler::UpdateDevice]: a problem occur while writing flash",
+                        );
+
+                    // TODO: we need to restart because we need to create all button tasks again, maybe we can find a way to avoid it
+                    // maybe we can use a channel to trigger task creation, the problem is how to erase previous tasks from memory
+                    info!("[message_handler::UpdateDevice]: restarting device");
+
+                    // TODO: find a more secure way to restart (the wifi driver sometimes not work on the restart)
+                    unsafe {
+                        esp_restart();
+                    }
+                }
+                ServerMessage::RestartDevice(_) => {
+                    // TODO: restart device
+                    info!("[message_handler::RestartDevice]: restarting device");
+                    unsafe {
+                        esp_restart();
+                    }
+                }
+                ServerMessage::ClearCredentials(_) => {
+                    info!("[message_handler::ClearCredentials]: erasing network credentials");
+                    nvs_namespace.remove(NETWORK_TAG).unwrap();
+                    info!("[message_handler::ClearCredentials]: restarting device");
+                    unsafe {
+                        esp_restart();
+                    }
                 }
             }
         }
-        _ => info!("[message_handler]: {:?}", message),
+        _ => info!("[message_handler]: {:?}", wb_message),
     }
 }
