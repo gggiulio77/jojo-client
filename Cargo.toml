@@ -36,12 +36,12 @@ parking_lot = "0.12.1"
 rgb = "0.8.36"
 rand = "0.8.5"
 url = "2.4.0"
-tungstenite = "0.20.x"
+tungstenite = "0.21"
 bincode = "1.3.3"
 bus = "2.4.0"
 heapless = { version = "0.8", features = ["serde"] }
 jojo-common = { path = "C:/Users/gggiu/Documents/personal-projects/rust/jojo-common" }
-uuid = { version = "1.4.1", features = ["v4", "fast-rng", "serde"] }
+uuid = { version = "1.6.1", features = ["v4", "fast-rng", "serde"] }
 
 [build-dependencies]
 embuild = "0.31.4"
