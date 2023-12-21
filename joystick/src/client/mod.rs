@@ -1,7 +1,10 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
+use anyhow::Result;
+use common::{broadcast, led, websocket, wifi_client, DEVICE_TAG, WEBSOCKET_PATH};
 use crossbeam_channel::unbounded;
 use esp_idf_hal::{
+    adc::{self, AdcChannelDriver, AdcDriver},
     gpio::{AnyIOPin, Pull},
     prelude::Peripherals,
 };
@@ -10,25 +13,23 @@ use esp_idf_svc::{
     nvs::{EspNvs, EspNvsPartition, NvsDefault},
     timer::EspTaskTimerService,
 };
-use jojo_common::device::Device;
+use jojo_common::{
+    button::{Button, ButtonAction, ButtonMode},
+    device::Device,
+    gamepad::{GamepadButton, GamepadButtonState},
+};
 use log::*;
 use parking_lot::{Condvar, Mutex};
 use rgb::RGB8;
 
-pub mod broadcast;
-pub mod mouse;
-pub mod websocket;
-pub mod wifi_client;
+pub mod peripherals;
 
-use crate::{client::broadcast::BroadcastTask, client::mouse::button::ButtonTask, led};
-
-const WEBSOCKET_PATH: &'static str = env!("WEBSOCKET_PATH");
+use crate::client::peripherals::button::ButtonTask;
 
 pub fn main(
     nvs_default: EspNvsPartition<NvsDefault>,
     network_credentials: jojo_common::network::NetworkCredentials,
-    nvs_namespace: EspNvs<NvsDefault>,
-    device: Device,
+    mut nvs_namespace: EspNvs<NvsDefault>,
 ) -> anyhow::Result<()> {
     info!("[client_task]: init");
 
@@ -48,7 +49,6 @@ pub fn main(
     // TODO: review this condvar, maybe replace it with a websocket broadcast channel
     let wb_status = Arc::new((Mutex::new(false), Condvar::new()));
     let wb_status_cloned = Arc::clone(&wb_status);
-    let wb_status_stick = Arc::clone(&wb_status);
     let wb_status_axis = Arc::clone(&wb_status);
 
     // TODO: review this channel, maybe replace it with two broadcast channels, for websocket and discovery
@@ -56,8 +56,11 @@ pub fn main(
 
     // Channels to send websocket messages
     let (wb_sender_tx, wb_sender_rx) = unbounded::<jojo_common::message::ClientMessage>();
-    let stick_wb_sender_tx = wb_sender_tx.clone();
     let axis_wb_sender_tx = wb_sender_tx.clone();
+
+    info!("[client_task]: getting device");
+
+    let device = get_device(&mut nvs_namespace)?;
 
     info!("[client_task]: creating tasks");
 
@@ -79,7 +82,9 @@ pub fn main(
     let _broadcast_discovery = std::thread::Builder::new()
         .name("broadcast_discovery".into())
         .stack_size(6 * 1024)
-        .spawn(|| broadcast::init_task(BroadcastTask::new(wifi_status_bd, discovery_tx)))?;
+        .spawn(|| {
+            broadcast::init_task(broadcast::BroadcastTask::new(wifi_status_bd, discovery_tx))
+        })?;
 
     let cloned_device = device.clone();
 
@@ -97,60 +102,45 @@ pub fn main(
             ))
         })?;
 
-    // TODO: we need a way to know if we have a mouse or a gamepad stick or both. Maybe find a way to store it in flash or made hardcoded code to one device only.
-    let _stick_thread = std::thread::Builder::new()
-        .name("stick_thread".into())
+    // TODO: move all this shit to a build pattern or function
+    let adc_1_driver = Arc::new(Mutex::new(
+        AdcDriver::new(
+            peripherals.adc1,
+            &adc::config::Config::new().calibration(true),
+        )
+        .unwrap(),
+    ));
+    let adc_1_driver_clone = adc_1_driver.clone();
+    let axis_wb_sender_tx_clone = axis_wb_sender_tx.clone();
+    let wb_status_axis_clone = wb_status_axis.clone();
+
+    let _axis_thread = std::thread::Builder::new()
+        .name("axis1_thread".into())
         .stack_size(8 * 1024)
         .spawn(|| {
-            mouse::stick::init_task(mouse::stick::StickTask::new(
-                peripherals.adc1,
-                peripherals.pins.gpio5,
-                peripherals.pins.gpio4,
+            peripherals::axis::init_task(peripherals::axis::AxisTask::new(
+                adc_1_driver,
+                AdcChannelDriver::new(peripherals.pins.gpio4).unwrap(),
+                jojo_common::gamepad::Axis::Axis1,
                 // TODO: replace with stick_websocket_sender_tx
-                stick_wb_sender_tx,
-                wb_status_stick,
+                axis_wb_sender_tx,
+                wb_status_axis,
             ))
         })?;
 
-    // TODO: move all this shit to a build pattern or function
-    // let adc_1_driver = Arc::new(Mutex::new(
-    //     AdcDriver::new(
-    //         peripherals.adc1,
-    //         &adc::config::Config::new().calibration(true),
-    //     )
-    //     .unwrap(),
-    // ));
-    // let adc_1_driver_clone = adc_1_driver.clone();
-    // let axis_wb_sender_tx_clone = axis_wb_sender_tx.clone();
-    // let wb_status_axis_clone = wb_status_axis.clone();
-
-    // let _axis_thread = std::thread::Builder::new()
-    //     .name("axis1_thread".into())
-    //     .stack_size(8 * 1024)
-    //     .spawn(|| {
-    //         mouse::axis::init_task(mouse::axis::AxisTask::new(
-    //             adc_1_driver,
-    //             AdcChannelDriver::new(peripherals.pins.gpio4).unwrap(),
-    //             jojo_common::gamepad::Axis::Axis1,
-    //             // TODO: replace with stick_websocket_sender_tx
-    //             axis_wb_sender_tx,
-    //             wb_status_axis,
-    //         ))
-    //     })?;
-
-    // let _axis_thread = std::thread::Builder::new()
-    //     .name("axis2_thread".into())
-    //     .stack_size(8 * 1024)
-    //     .spawn(|| {
-    //         mouse::axis::init_task(mouse::axis::AxisTask::new(
-    //             adc_1_driver_clone,
-    //             AdcChannelDriver::new(peripherals.pins.gpio5).unwrap(),
-    //             jojo_common::gamepad::Axis::Axis2,
-    //             // TODO: replace with stick_websocket_sender_tx
-    //             axis_wb_sender_tx_clone,
-    //             wb_status_axis_clone,
-    //         ))
-    //     })?;
+    let _axis_thread = std::thread::Builder::new()
+        .name("axis2_thread".into())
+        .stack_size(8 * 1024)
+        .spawn(|| {
+            peripherals::axis::init_task(peripherals::axis::AxisTask::new(
+                adc_1_driver_clone,
+                AdcChannelDriver::new(peripherals.pins.gpio5).unwrap(),
+                jojo_common::gamepad::Axis::Axis2,
+                // TODO: replace with stick_websocket_sender_tx
+                axis_wb_sender_tx_clone,
+                wb_status_axis_clone,
+            ))
+        })?;
 
     // TODO: find a more idiomatic way of doing this, maybe a builder pattern may help
     let mut gpios: Vec<(AnyIOPin, Pull)> = vec![
@@ -192,7 +182,7 @@ pub fn main(
         let _gpio = std::thread::Builder::new()
             .name("gpio_thread".into())
             .stack_size(6 * 1024)
-            .spawn(move || mouse::button::init_task(button_task))
+            .spawn(move || peripherals::button::init_task(button_task))
             .unwrap();
     }
 
@@ -205,4 +195,58 @@ pub fn main(
     // })?;
 
     Ok(())
+}
+
+fn get_device(nvs_namespace: &mut EspNvs<NvsDefault>) -> Result<Device> {
+    let buffer: &mut [u8] = &mut [0; 500];
+
+    // nvs_namespace.remove(NETWORK_TAG).unwrap();
+    // nvs_namespace.remove(DEVICE_TAG).unwrap();
+
+    // TODO: replace this with something more elegant
+    let main_device;
+
+    if let Some(device) = nvs_namespace.get_raw(DEVICE_TAG, buffer)? {
+        main_device = bincode::deserialize(device)?;
+        info!("[main_task]: device found in flash {:?}", main_device);
+    } else {
+        // TODO: create device and store it
+        let gpio6 = uuid::Uuid::new_v4();
+        let gpio6_button = Button::new(gpio6, String::from("button_0"), ButtonMode::Hold);
+        let mut actions = HashMap::from([(
+            gpio6,
+            vec![ButtonAction::GamepadButton(
+                GamepadButton::Button1,
+                GamepadButtonState::Released,
+            )],
+        )]);
+
+        let gpio0 = uuid::Uuid::new_v4();
+        let gpio0_button = Button::new(gpio0, String::from("button_1"), ButtonMode::Hold);
+        actions.insert(
+            gpio0,
+            vec![ButtonAction::GamepadButton(
+                GamepadButton::Button2,
+                GamepadButtonState::Released,
+            )],
+        );
+
+        let device = Device::new(
+            uuid::Uuid::new_v4(),
+            String::from("joystick_1"),
+            None,
+            vec![gpio6_button, gpio0_button],
+            actions,
+        );
+
+        info!("[main_task]: saving device in flash {:?}", device);
+
+        nvs_namespace
+            .set_raw(DEVICE_TAG, &bincode::serialize(&device)?)
+            .unwrap();
+
+        main_device = device;
+    };
+
+    Ok(main_device)
 }

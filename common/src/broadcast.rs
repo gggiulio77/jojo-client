@@ -7,6 +7,8 @@ use std::{
 use log::*;
 use parking_lot::{Condvar, Mutex};
 
+use crate::{BROADCAST_ADDRESS, BROADCAST_BIND_ADDRESS};
+
 pub struct BroadcastTask {
     wifi_status: Arc<(Mutex<bool>, Condvar)>,
     discovery_tx: crossbeam_channel::Sender<SocketAddr>,
@@ -23,9 +25,6 @@ impl BroadcastTask {
         }
     }
 }
-
-const BROADCAST_BIND_ADDRESS: &'static str = env!("BROADCAST_BIND_ADDRESS");
-const BROADCAST_ADDRESS: &'static str = env!("BROADCAST_ADDRESS");
 
 pub fn init_task(task: BroadcastTask) -> anyhow::Result<()> {
     let BroadcastTask {

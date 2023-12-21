@@ -1,9 +1,8 @@
 use std::time::Duration;
 
+use common::NETWORK_TAG;
 use esp_idf_svc::nvs::{EspNvs, NvsDefault};
 use log::*;
-
-use crate::NETWORK_TAG;
 
 // TODO: think about make this task more generic to be use by otp and client
 pub struct NvsTask {

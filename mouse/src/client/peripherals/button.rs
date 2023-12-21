@@ -1,6 +1,7 @@
 use esp_idf_hal::gpio::{AnyIOPin, IOPin, Input, Level, PinDriver, Pull};
 use jojo_common::{
     button::{ButtonAction, ButtonMode},
+    gamepad::GamepadButtonState,
     message::ClientMessage,
     mouse::MouseButtonState,
 };
@@ -102,6 +103,17 @@ impl From<Level> for MouseButtonStateExt {
     }
 }
 
+struct GamepadButtonStateExt(GamepadButtonState);
+
+impl From<Level> for GamepadButtonStateExt {
+    fn from(value: Level) -> Self {
+        match value {
+            Level::High => GamepadButtonStateExt(GamepadButtonState::Released),
+            Level::Low => GamepadButtonStateExt(GamepadButtonState::Pressed),
+        }
+    }
+}
+
 pub fn init_task(task: ButtonTask) {
     let ButtonTask {
         gpio,
@@ -152,13 +164,23 @@ pub fn init_task(task: ButtonTask) {
                                 .iter()
                                 .map(|action| {
                                     // TODO: remove this clone, find a better way to populate collect
-                                    if let ButtonAction::MouseButton(button, _) = action {
-                                        let MouseButtonStateExt(state) =
-                                            main_state.button_level.into();
 
-                                        return ButtonAction::MouseButton(button.to_owned(), state);
-                                    } else {
-                                        return action.to_owned();
+                                    match action {
+                                        ButtonAction::MouseButton(button, _) => {
+                                            let MouseButtonStateExt(state) =
+                                                main_state.button_level.into();
+
+                                            ButtonAction::MouseButton(button.to_owned(), state)
+                                        }
+                                        ButtonAction::GamepadButton(button, _) => {
+                                            let GamepadButtonStateExt(state) =
+                                                main_state.button_level.into();
+
+                                            println!("{:?} {:?}", action, state);
+
+                                            ButtonAction::GamepadButton(button.to_owned(), state)
+                                        }
+                                        _ => action.to_owned(),
                                     }
                                 })
                                 .collect()

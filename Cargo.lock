@@ -292,6 +292,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bus",
+ "crossbeam-channel",
+ "dotenv",
+ "embuild",
+ "esp-idf-hal",
+ "esp-idf-svc",
+ "futures",
+ "heapless 0.8.0",
+ "jojo-common",
+ "log",
+ "parking_lot",
+ "rand",
+ "rgb",
+ "serde",
+ "serde_json",
+ "tungstenite",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "const_format"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1089,6 +1115,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "joystick"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bus",
+ "common",
+ "crossbeam-channel",
+ "dotenv",
+ "embuild",
+ "esp-idf-hal",
+ "esp-idf-svc",
+ "futures",
+ "heapless 0.8.0",
+ "jojo-common",
+ "log",
+ "otp",
+ "parking_lot",
+ "rand",
+ "rgb",
+ "serde",
+ "serde_json",
+ "tungstenite",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1178,12 +1232,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "mouse-client"
+name = "mouse"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
  "bus",
+ "common",
  "crossbeam-channel",
  "dotenv",
  "embuild",
@@ -1193,6 +1248,7 @@ dependencies = [
  "heapless 0.8.0",
  "jojo-common",
  "log",
+ "otp",
  "parking_lot",
  "rand",
  "rgb",
@@ -1299,6 +1355,33 @@ name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
+
+[[package]]
+name = "otp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bus",
+ "common",
+ "crossbeam-channel",
+ "dotenv",
+ "embuild",
+ "esp-idf-hal",
+ "esp-idf-svc",
+ "futures",
+ "heapless 0.8.0",
+ "jojo-common",
+ "log",
+ "parking_lot",
+ "rand",
+ "rgb",
+ "serde",
+ "serde_json",
+ "tungstenite",
+ "url",
+ "uuid",
+]
 
 [[package]]
 name = "parking_lot"

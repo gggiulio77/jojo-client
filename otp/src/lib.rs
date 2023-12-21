@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::led;
 use crossbeam_channel::unbounded;
 use esp_idf_hal::prelude::Peripherals;
 use esp_idf_svc::{
@@ -13,8 +14,6 @@ use rgb::RGB8;
 pub mod nvs;
 pub mod server;
 pub mod wifi_otp;
-
-use crate::led;
 
 pub fn main(
     nvs_default: EspNvsPartition<NvsDefault>,
