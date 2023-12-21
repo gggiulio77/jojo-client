@@ -1,0 +1,39 @@
+[package]
+name = "joystick"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["std", "esp-idf-svc/native"]
+
+pio = ["esp-idf-svc/pio"]
+std = ["alloc", "esp-idf-svc/binstart", "esp-idf-svc/std"]
+alloc = ["esp-idf-svc/alloc"]
+nightly = ["esp-idf-svc/nightly"]
+experimental = ["esp-idf-svc/experimental"]
+
+[dependencies]
+log.workspace = true
+esp-idf-svc.workspace = true
+esp-idf-hal.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+crossbeam-channel.workspace = true
+futures.workspace = true
+parking_lot.workspace = true
+rgb.workspace = true
+rand.workspace = true
+url.workspace = true
+tungstenite.workspace = true
+bincode.workspace = true
+bus.workspace = true
+heapless.workspace = true
+jojo-common.workspace = true
+uuid.workspace = true
+otp = { path = "../otp" }
+common = { path = "../common" }
+
+[build-dependencies]
+embuild.workspace = true
+dotenv.workspace = true

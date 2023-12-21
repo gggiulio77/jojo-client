@@ -1,13 +1,13 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use embedded_svc::wifi::{
-    AccessPointConfiguration, AuthMethod, ClientConfiguration, Configuration,
-};
-use esp_idf_hal::{delay::FreeRtos, modem::Modem};
+use esp_idf_hal::modem::Modem;
 use esp_idf_svc::{
     eventloop::{EspEventLoop, System},
     nvs::{EspNvsPartition, NvsDefault},
-    wifi::{config::ScanConfig, BlockingWifi, EspWifi},
+    wifi::{
+        config::ScanConfig, AccessPointConfiguration, AuthMethod, BlockingWifi,
+        ClientConfiguration, Configuration, EspWifi,
+    },
 };
 use log::*;
 use parking_lot::{Condvar, Mutex};
@@ -74,13 +74,14 @@ fn connect(
 #[derive(Debug)]
 pub enum ScanMessage {
     Request,
-    Response(Vec<heapless::String<32>>),
+    // TODO: find a way to wrap jojo_common::network::Ssid to work with heapless
+    Response(Vec<jojo_common::network::Ssid>),
 }
 
 fn scan(
     wifi: &mut BlockingWifi<EspWifi<'static>>,
-) -> anyhow::Result<(Vec<heapless::String<32>>, usize)> {
-    let mut vec_ssid: Vec<heapless::String<32>> = Vec::new();
+) -> anyhow::Result<(Vec<jojo_common::network::Ssid>, usize)> {
+    let mut vec_ssid: Vec<jojo_common::network::Ssid> = Vec::new();
 
     for channel in (1..=11).rev() {
         wifi.wifi_mut().start_scan(
@@ -91,12 +92,13 @@ fn scan(
             false,
         )?;
 
-        FreeRtos::delay_ms(150);
+        std::thread::sleep(Duration::from_millis(150));
 
         if let Ok(result) = wifi.wifi_mut().get_scan_result() {
             result.into_iter().for_each(|network| {
                 if network.signal_strength > -50 {
-                    vec_ssid.push(network.ssid);
+                    // TODO: find a way to wrap jojo_common::network::Ssid to work with heapless
+                    vec_ssid.push(network.ssid.to_string().try_into().unwrap());
                 }
             });
         }
@@ -155,6 +157,6 @@ pub fn connect_task(task: ConnectTask) {
             }
         }
 
-        FreeRtos::delay_ms(100);
+        std::thread::sleep(Duration::from_millis(100));
     }
 }

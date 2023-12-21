@@ -1,20 +1,17 @@
 use std::sync::Arc;
+use std::time::Duration;
 
-use crate::NetworkCredentials;
-use embedded_svc::{
-    http::server::{Connection, Handler, HandlerError, HandlerResult, Method, Middleware, Request},
-    io::Write,
-    utils,
-};
-use esp_idf_hal::delay::FreeRtos;
-use esp_idf_svc::http::server::{
-    fn_handler, Configuration as HttpServerConfiguration, EspHttpConnection, EspHttpServer,
+use esp_idf_svc::http::Method;
+use esp_idf_svc::{
+    http::server::{
+        fn_handler, Configuration as HttpServerConfiguration, Connection, EspHttpConnection,
+        EspHttpServer, Handler, HandlerError, HandlerResult, Middleware, Request,
+    },
+    io::{utils, Write},
 };
 use log::*;
 use parking_lot::{Condvar, Mutex};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::str;
 
 use super::wifi_otp;
 
@@ -22,7 +19,7 @@ pub struct ServerTask {
     wifi_status: Arc<(Mutex<bool>, Condvar)>,
     wifi_tx: crossbeam_channel::Sender<wifi_otp::ScanMessage>,
     server_rx: crossbeam_channel::Receiver<wifi_otp::ScanMessage>,
-    nvs_tx: crossbeam_channel::Sender<NetworkCredentials>,
+    nvs_tx: crossbeam_channel::Sender<jojo_common::network::NetworkCredentials>,
 }
 
 impl ServerTask {
@@ -30,7 +27,7 @@ impl ServerTask {
         wifi_status: Arc<(Mutex<bool>, Condvar)>,
         wifi_tx: crossbeam_channel::Sender<wifi_otp::ScanMessage>,
         server_rx: crossbeam_channel::Receiver<wifi_otp::ScanMessage>,
-        nvs_tx: crossbeam_channel::Sender<NetworkCredentials>,
+        nvs_tx: crossbeam_channel::Sender<jojo_common::network::NetworkCredentials>,
     ) -> Self {
         ServerTask {
             wifi_status,
@@ -86,6 +83,7 @@ fn health(request: Request<&mut EspHttpConnection>) -> Result<(), HandlerError> 
         ],
     )?;
 
+    // TODO: make HealthResponse struct
     let body = json!({ "status": "OK"});
 
     response.write_all(body.to_string().as_bytes())?;
@@ -109,21 +107,19 @@ fn scan(
 
     wifi_tx.try_send(wifi_otp::ScanMessage::Request).unwrap();
 
-    let mut buffer_scan_result: Vec<heapless::String<32>> = Vec::new();
+    let mut buffer_scan_result: Vec<jojo_common::network::Ssid> = Vec::new();
 
     loop {
         if let Ok(message) = server_rx.try_recv() {
             if let wifi_otp::ScanMessage::Response(scan_result) = message {
-                buffer_scan_result.append(&mut scan_result.clone());
+                buffer_scan_result.append(&mut scan_result.clone().try_into().unwrap());
                 break;
             }
-            FreeRtos::delay_ms(100);
+            std::thread::sleep(Duration::from_millis(100));
         };
     }
 
-    let body = ScanResponse {
-        found_ssid: buffer_scan_result,
-    };
+    let body = jojo_common::otp::ScanResponse::new(buffer_scan_result);
 
     info!("[server_task]:Response:{:?}", body);
 
@@ -134,14 +130,15 @@ fn scan(
 
 fn save_credentials(
     mut request: Request<&mut EspHttpConnection>,
-    nvs_tx: &crossbeam_channel::Sender<NetworkCredentials>,
+    nvs_tx: &crossbeam_channel::Sender<jojo_common::network::NetworkCredentials>,
 ) -> Result<(), HandlerError> {
     let (_, mut body) = request.split();
 
     let mut buf = [0u8; 512];
-    let bytes_read = utils::io::try_read_full(&mut body, &mut buf).map_err(|e| e.0)?;
+    let bytes_read = utils::try_read_full(&mut body, &mut buf).map_err(|e| e.0)?;
 
-    let network_credentials: NetworkCredentials = serde_json::from_slice(&buf[0..bytes_read])?;
+    let network_credentials: jojo_common::network::NetworkCredentials =
+        serde_json::from_slice(&buf[0..bytes_read])?;
 
     nvs_tx.send(network_credentials)?;
 
@@ -150,11 +147,6 @@ fn save_credentials(
     request.into_ok_response()?;
 
     Ok(())
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct ScanResponse {
-    found_ssid: Vec<heapless::String<32>>,
 }
 
 pub fn init_task(task: ServerTask) {
@@ -208,6 +200,6 @@ pub fn init_task(task: ServerTask) {
     // TODO: think about adding a restart endpoint
 
     loop {
-        FreeRtos::delay_ms(1000);
+        std::thread::sleep(Duration::from_millis(1000));
     }
 }

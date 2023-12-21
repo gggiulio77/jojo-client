@@ -1,12 +1,11 @@
 use std::{sync::Arc, time::Duration};
 
-use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
 use esp_idf_hal::modem::Modem;
 use esp_idf_svc::{
     eventloop::{EspEventLoop, System},
     nvs::{EspNvsPartition, NvsDefault},
     timer::{EspTimerService, Task},
-    wifi::{AsyncWifi, EspWifi},
+    wifi::{AsyncWifi, AuthMethod, ClientConfiguration, Configuration, EspWifi},
 };
 use futures::executor::block_on;
 use log::*;
@@ -84,8 +83,6 @@ pub fn connect_task(task: ConnectTask) {
         password,
     } = task;
 
-    let (lock, cvar) = &*status;
-
     let mut wifi_config = AsyncWifi::wrap(
         EspWifi::new(modem, sys_loop.clone(), nvs).unwrap(),
         sys_loop,
@@ -95,6 +92,7 @@ pub fn connect_task(task: ConnectTask) {
 
     block_on(connect(&mut wifi_config, ssid, password)).unwrap();
 
+    let (lock, cvar) = &*status;
     // Write value to mutex
     *lock.lock() = true;
     cvar.notify_all();

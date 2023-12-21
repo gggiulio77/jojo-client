@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use anyhow::{bail, Ok, Result};
 use esp_idf_hal::{
-    delay::FreeRtos,
     gpio,
     rmt::{config::TransmitConfig, FixedLengthSignal, PinState, Pulse, TxRmtDriver, CHANNEL0},
 };
@@ -54,7 +53,7 @@ pub fn rainbow(mut led: Neopixel) -> Result<()> {
         }
         i += 1;
 
-        FreeRtos::delay_ms(10);
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 

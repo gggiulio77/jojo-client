@@ -1,0 +1,44 @@
+{
+    "cSpell.words": [
+        "Atten",
+        "bincode",
+        "binstart",
+        "bssid",
+        "Condvar",
+        "cvar",
+        "embuild",
+        "espidf",
+        "eventloop",
+        "gpio",
+        "gpios",
+        "heapless",
+        "jojo",
+        "Neopixel",
+        "netif",
+        "nonblocking",
+        "rngs",
+        "rustc",
+        "ssid",
+        "sysenv",
+        "tungstenite"
+    ],
+    "rust-analyzer.check.overrideCommand": [
+        "cargo",
+        "check",
+        "-r",
+        "--workspace",
+        "--message-format=json",
+        "--target",
+        "xtensa-esp32s3-espidf"
+    ],
+    "rust-analyzer.cargo.buildScripts.overrideCommand": [
+        "cargo",
+        "check",
+        "-r",
+        "--quiet",
+        "--workspace",
+        "--message-format=json",
+        "--target",
+        "xtensa-esp32s3-espidf"
+    ]
+}

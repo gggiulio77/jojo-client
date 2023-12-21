@@ -1,10 +1,8 @@
-[package]
-name = "mouse-client"
-version = "0.1.0"
-authors = ["gggiu <gggiulio77@gmail.com>"]
-edition = "2021"
+[workspace]
 resolver = "2"
-rust-version = "1.66"
+
+members = ["otp", "common", "mouse", "joystick"]
+default-members = ["otp", "common", "mouse", "joystick"]
 
 [profile.release]
 opt-level = "s"
@@ -13,26 +11,10 @@ opt-level = "s"
 debug = true    # Symbols are nice and they don't increase the size on Flash
 opt-level = "z"
 
-[features]
-
-default = ["std", "hal", "esp-idf-sys/native"]
-
-
-pio = ["esp-idf-sys/pio"]
-all = ["std", "nightly", "experimental", "embassy"]
-hal = ["esp-idf-hal", "embedded-svc", "esp-idf-svc"]
-std = ["alloc", "esp-idf-sys/std", "esp-idf-sys/binstart", "embedded-svc?/std", "esp-idf-hal?/std", "esp-idf-svc?/std"]
-alloc = ["embedded-svc?/alloc", "esp-idf-hal?/alloc", "esp-idf-svc?/alloc"]
-nightly = ["embedded-svc?/nightly", "esp-idf-svc?/nightly"] # Future: "esp-idf-hal?/nightly"
-experimental = ["embedded-svc?/experimental", "esp-idf-svc?/experimental"]
-embassy = ["esp-idf-hal?/embassy-sync", "esp-idf-hal?/critical-section", "esp-idf-hal?/edge-executor", "esp-idf-svc?/embassy-time-driver", "esp-idf-svc?/embassy-time-isr-queue"]
-
-[dependencies]
+[workspace.dependencies]
 log = { version = "0.4.17", default-features = false }
-esp-idf-sys = { version = "0.33", default-features = false, features = ["binstart"] }
-esp-idf-hal = { version = "0.41", optional = true, default-features = false }
-esp-idf-svc = { version = "0.46", optional = true, default-features = false }
-embedded-svc = { version = "0.25", optional = true, default-features = false }
+esp-idf-svc = { version = "0.47.1", default-features = false }
+esp-idf-hal = { version = "0.42", default-features = false }
 anyhow = "1.0.71"
 serde_json = "1.0.96"
 serde = { version = "1.0.160", features = ["derive"] }
@@ -42,16 +24,11 @@ parking_lot = "0.12.1"
 rgb = "0.8.36"
 rand = "0.8.5"
 url = "2.4.0"
-tungstenite = "0.19.0"
+tungstenite = "0.21"
 bincode = "1.3.3"
 bus = "2.4.0"
-heapless = { version = "0.7.16", features = ["serde"] }
-
-[build-dependencies]
-embuild = "0.31.2"
+heapless = { version = "0.8", features = ["serde"] }
+jojo-common = { path = "C:/Users/gggiu/Documents/personal-projects/rust/jojo-common" }
+uuid = { version = "1.6.1", features = ["v4", "fast-rng", "serde"] }
+embuild = "0.31.4"
 dotenv = "0.15.0"
-
-[patch.crates-io]
-esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
-esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys" }
-esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
