@@ -61,7 +61,10 @@ pub fn init_task(task: BroadcastTask) -> anyhow::Result<()> {
                 info!("[sender_task]: ending task");
                 return;
             }
-            info!("[sender_task]: sending udp packet");
+            info!(
+                "[sender_task]: sending udp packet - {:?}",
+                BROADCAST_ADDRESS
+            );
             socket_tx
                 .read()
                 .send_to("hello".as_bytes(), BROADCAST_ADDRESS)

@@ -28,7 +28,7 @@ tungstenite = "0.21"
 bincode = "1.3.3"
 bus = "2.4.0"
 heapless = { version = "0.8", features = ["serde"] }
-jojo-common = { path = "C:/Users/gggiu/Documents/personal-projects/rust/jojo-common" }
+jojo-common = { path = "C:/Users/gggiu/personal-projects/jojo-common" }
 uuid = { version = "1.6.1", features = ["v4", "fast-rng", "serde"] }
 embuild = "0.31.4"
 dotenv = "0.15.0"
