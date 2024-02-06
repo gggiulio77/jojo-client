@@ -14,7 +14,7 @@ The client operates in two modes:
 
 - OTP Mode: Initially acts as an access point, allowing users to connect to it and make requests to its HTTP server. This mode facilitates scanning WiFi networks and storing credentials. It only switches to this mode if the device doesn't find any network credentials in flash.
 
-- WebSocket Client Mode: With credentials stored in flash, the client connects to the WiFi network and appears as a device connected to it. It first searches for the [jojo-server](https://github.com/gggiulio77/jojo-server) using [jojo-discovery](https://github.com/gggiulio77/jojo-discovery). Upon discovery, it attempts to establish a WebSocket connection with the server. Once connected, it starts transmitting all user inputs to the server. The WebSocket protocol is chosen for its ability to achieve low latency between user inputs, providing a smooth user experience, particularly when controlling the mouse or virtual joystick of the host computer.
+- WebSocket Client Mode: With credentials stored in flash, the client connects to the WiFi network. It first searches for the [jojo-server](https://github.com/gggiulio77/jojo-server) using [jojo-discovery](https://github.com/gggiulio77/jojo-discovery). Upon discovery, it attempts to establish a WebSocket connection with the server. Once connected, it starts transmitting all user inputs to the server. The WebSocket protocol is chosen for its ability to achieve low latency between user inputs, providing a smooth user experience, particularly when controlling the mouse or virtual joystick of the host computer.
 
 ### Quick Links
 
