@@ -9,6 +9,7 @@ use esp_idf_svc::{
         ClientConfiguration, Configuration, EspWifi,
     },
 };
+use heapless::String;
 use log::*;
 use parking_lot::{Condvar, Mutex};
 
@@ -55,10 +56,10 @@ fn connect(
     let wifi_configuration: Configuration = Configuration::Mixed(
         ClientConfiguration::default(),
         AccessPointConfiguration {
-            ssid: ssid.into(),
+            ssid: String::try_from(ssid).unwrap(),
             ssid_hidden: false,
             auth_method: AuthMethod::WPA2Personal,
-            password: password.into(),
+            password: String::try_from(password).unwrap(),
             ..Default::default()
         },
     );

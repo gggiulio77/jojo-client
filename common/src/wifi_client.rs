@@ -8,6 +8,7 @@ use esp_idf_svc::{
     wifi::{AsyncWifi, AuthMethod, ClientConfiguration, Configuration, EspWifi},
 };
 use futures::executor::block_on;
+use heapless::String;
 use log::*;
 use parking_lot::{Condvar, Mutex};
 
@@ -49,10 +50,10 @@ pub async fn connect(
     password: &str,
 ) -> anyhow::Result<()> {
     let wifi_configuration: Configuration = Configuration::Client(ClientConfiguration {
-        ssid: ssid.into(),
+        ssid: String::try_from(ssid).unwrap(),
         bssid: None,
         auth_method: AuthMethod::WPA2Personal,
-        password: password.into(),
+        password: String::try_from(password).unwrap(),
         channel: None,
     });
 

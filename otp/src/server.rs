@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -5,7 +6,7 @@ use esp_idf_svc::http::Method;
 use esp_idf_svc::{
     http::server::{
         fn_handler, Configuration as HttpServerConfiguration, Connection, EspHttpConnection,
-        EspHttpServer, Handler, HandlerError, HandlerResult, Middleware, Request,
+        EspHttpServer, Handler, Middleware, Request,
     },
     io::{utils, Write},
 };
@@ -38,15 +39,18 @@ impl ServerTask {
     }
 }
 
+#[derive(Debug)]
 pub struct ErrorMiddleware {}
 
-impl<C> Middleware<C> for ErrorMiddleware
+impl<'a, H> Middleware<EspHttpConnection<'a>, H> for ErrorMiddleware
 where
-    C: Connection,
+    H: Handler<EspHttpConnection<'a>>,
 {
-    fn handle<'a, H>(&'a self, connection: &'a mut C, handler: &'a H) -> HandlerResult
+    type Error = anyhow::Error;
+
+    fn handle(&self, connection: &mut EspHttpConnection<'a>, handler: &H) -> Result<(), Self::Error>
     where
-        H: Handler<C>,
+        H: Handler<EspHttpConnection<'a>>,
     {
         let req = Request::wrap(connection);
 
@@ -61,11 +65,11 @@ where
                     None,
                     &[("Content-type", "application/json")],
                 )?;
-                let error = json!({ "error": err.to_string() });
-                write!(&mut resp, "{error}")?;
+
+                write!(&mut resp, "ERROR: {err:?}")?;
             } else {
                 // Nothing can be done as the error happened after the response was initiated, propagate further
-                return Err(err);
+                Err(anyhow::Error::msg(format!("ERROR: {err:?}")))?;
             }
         }
 
@@ -73,7 +77,7 @@ where
     }
 }
 
-fn health(request: Request<&mut EspHttpConnection>) -> Result<(), HandlerError> {
+fn health(request: Request<&mut EspHttpConnection>) -> Result<(), anyhow::Error> {
     let mut response = request.into_response(
         200,
         None,
@@ -95,7 +99,7 @@ fn scan(
     request: Request<&mut EspHttpConnection>,
     wifi_tx: &crossbeam_channel::Sender<wifi_otp::ScanMessage>,
     server_rx: &crossbeam_channel::Receiver<wifi_otp::ScanMessage>,
-) -> Result<(), HandlerError> {
+) -> Result<(), anyhow::Error> {
     let mut response = request.into_response(
         200,
         None,
@@ -131,7 +135,7 @@ fn scan(
 fn save_credentials(
     mut request: Request<&mut EspHttpConnection>,
     nvs_tx: &crossbeam_channel::Sender<jojo_common::network::NetworkCredentials>,
-) -> Result<(), HandlerError> {
+) -> Result<(), anyhow::Error> {
     let (_, mut body) = request.split();
 
     let mut buf = [0u8; 512];
